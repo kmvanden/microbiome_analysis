@@ -41,7 +41,10 @@ sample_sums(ps) %>% summary() # check sequencing depth (rarefaction depth based 
 ps_rarefied <- rarefy_even_depth(ps, rngseed = 1234, sample.size = min(sample_sums(ps)), verbose = FALSE)
 
 # calculate alpha diversity using phyloseq
-alpha_phyloseq <- estimate_richness(ps_rarefied, measures = c("Observed", "Shannon", "Simpson", "Chao1"))
+alpha_phyloseq <- estimate_richness(ps_rarefied, measures = c("Observed", "Shannon", "Simpson"))
+alpha_chao <- estimate_richness(ps, measures = "Chao1") # use feature table without rarefaction with Chao1
+alpha_phyloseq$Chao1 <- alpha_chao$Chao1 # add Chao1 to alpha_phyloseq
+alpha_phyloseq$se.chao1 <- alpha_chao$se.chao1 # add se.chao1 to alpha_phyloseq
 alpha_phyloseq$sample_name <- rownames(alpha_phyloseq) # add column with sample names
 alpha_phyloseq <- left_join(alpha_phyloseq, meta, by = "sample_name") # merge phyloseq object with metadata (for plotting and statistical tests) 
 
