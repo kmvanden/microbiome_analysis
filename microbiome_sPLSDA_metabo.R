@@ -20,8 +20,9 @@ meta <- read.table("metadata.txt", header = TRUE)
 sample_key <- read_excel("metabo_batch.xlsx", sheet = "Sample Meta Data") # sample name key
 sample_key <- sample_key %>% mutate(CLIENT_SAMPLE_ID = sub("KMV_", "SMS_", CLIENT_SAMPLE_ID)) # rename sample ids
 all(sample_key$CLIENT_SAMPLE_ID %in% meta$sample_id)
-meta <- merge(meta, sample_key[, c("CLIENT_SAMPLE_ID", "PARENT_SAMPLE_NAME")], 
-              by.x = "sample_id", by.y = "CLIENT_SAMPLE_ID", all.x = TRUE) %>% # add PARENT_SAMPLE_NAME to meta
+meta <- meta %>%
+  left_join(sample_key %>% dplyr::select(CLIENT_SAMPLE_ID, PARENT_SAMPLE_NAME),
+            by = c("sample_id" = "CLIENT_SAMPLE_ID")) %>% # add PARENT_SAMPLE_NAME to meta
   filter(!is.na(PARENT_SAMPLE_NAME)) # subset
 
 # convert condition column into a factor
@@ -53,10 +54,8 @@ colnames(metabo) <- make.names(colnames(metabo)) # make sure names are syntactic
 
 ### feature filtering, zero imputation and log transformation 
 # assess missingness (zeros listed as NAs in data.frame)
-total_missing <- sum(is.na(metabo)) / prod(dim(metabo)) * 100 # overall missingness
 missing_per_feature <- colMeans(is.na(metabo)) * 100 # missingness per feature
 summary(missing_per_feature)
-missing_per_sample <- rowMeans(is.na(metabo)) * 100 # missingness per sample
 hist(missing_per_feature, breaks = 50, main = "Percent missing per metabolite", xlab = "Percent missing")
 
 # remove features with greater than 30% missing values
