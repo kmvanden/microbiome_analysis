@@ -21,7 +21,9 @@ These traditional diversity metrics assume an equal sampling effort, but micobio
   - Rarefaction removes differences in library size (sequencing depth), with the goal of ensuring fair comparison between the samples (i.e., deeper samples won’t appear more diverse).
   - However, the use of rarefaction is disputed, because it discards data (statistical power is decreased by shallower samples), introduces random variation (the subsampling is stochastic), can bias diversity estimation (especially for rare taxa) and does not correct for unobserved species.
 
-Alpha diversity values often exhibit heteroscedasticity (unequal variances across groups) and non-normal distributions. As a result, non-parametric statistical tests (**Wilcoxon Rank-Sum test** for comparing two groups and the **Kruskal-Wallis test** for comparing more than two groups) are typically used. These tests are based on ranked data rather than raw values, and do not assume normality. However, they do assume that the distributions being compared have a similar shape (e.g., similar variance and skewness).
+Alpha diversity values often exhibit heteroscedasticity (unequal variances across groups) and non-normal distributions. As a result, non-parametric statistical tests are typically used. These tests are based on ranked data rather than raw values, and do not assume normality. However, they do assume that the distributions being compared have a similar shape (e.g., similar variance and skewness).
+  - **Wilcoxon Rank-Sum test** for comparing two groups.
+  - **Kruskal-Wallis test** for comparing more than two groups.
 
 To avoid rarefaction and to better model the underlying microbial diversity, newer methods infer latent (unseen) diversity using statistical methods.
 
@@ -111,3 +113,42 @@ Once convergence is reached for a given component (i.e., when the features weigh
 MOFA2 is an unsupervised, probabilistic, multivariate method for integrating multiple omics datasets (views) measured on the same (or partially overlapping) set of samples. MOFA2 constructs latent factors that capture the most important sources of variation within and across data views using Bayesian inference. The latent factors can be shared across views (capturing covariation between omics datasets) or view-specific (capturing variation unique to one omics dataset), and are modeled as linear combinations of features. 
 
 MOFA2 initializes a probabilistic model structure that includes latent factors, feature weights (loadings) per view and noise and likelihood parameters (Gaussian for continuous data). Variational inference (an iterative optimization algorithm) is used to approximate the posterior distribution of the parameters by optimizing the Evidence Lower BOund (ELBO), which balances fit to the data with model complexity via regularization from priors. Sparsity-inducing priors, such as Automatic Relevance Determination (ARD), which shrinks irrelevant weights and factor-view combinations toward zero, and spike-and-slab priors, which shrink irrelevant weights exactly to zero, promote feature selection and enhance interpretability of the latent factors. The parameters are iteratively updated until convergence or stopping criteria (e.g., maximum number of iterations) is reached. 
+
+## :spider_web::tumbler_glass: Network Construction and comparison for Microbiome data (NetCoMi)
+Microbial association networks are graphs that model statistical associations (edges) between microbial taxa (nodes) based on abundance data. These associations can represent correlations (marginal relationships) or conditional dependencies (direct relationships). Edges can be weighted (indicating the strength of the association) and signed (where a positive sign suggests co-occurrence and negative sign suggests co-exclusion).
+
+Centrality measures are used to identify important nodes (hubs) within the network.
+  - **Degree**: the number of adjacent (directly connected) nodes.
+  - **Betweenness**: the fraction of shortest paths between all pairs of nodes that pass through the given node.
+  - **Closeness**: the reciprocal of the sum of the shortest path distances from the node to all other nodes.
+  - **Eigenvector**: A measure of how well-connected a node is to other well-connected nodes.
+
+Clusters are groups of taxa that are more densely interconnected with each other than with taxa outside the group (i.e., they are densely connected subgraphs within the larger network). Clustering can be performed using:
+  - **Hierarchical clustering** (based on dissimilarity): a dendrogram is created based on pairwise dissimilarity and then cut at a specified height to define the clusters.
+  - **Edge-betweenness** (based on dissimilarity): iteratively removes edges with the highest betweenness to reveal community structure.
+  - **Modularity-based clustering** (based on similarity): for example, fast-greedy modularity optimization (default in NetCoMi) partitions the network into modules by maximizing modularity (a measure that favors many edges within modules and few edges between them).
+
+**Sparse Correlations for Compositional data (SparCC)**: uses log-ratios of relative abundances to estimate the log-ratios of the unobserved absolute abundances (the true microbial counts). This is based on the assumption that the total community size is roughly constant across samples, so that log(A<sub>rel</sub>/<sub>Brel</sub>) ≈ log(A<sub>abs</sub>/B<sub>abs</sub>) = log(A<sub>abs</sub>) - log(B<sub>abs</sub>). 
+
+The use of log-ratios removes the constant-sum constraint inherent in compositional data, allowing the use of standard correlation and covariance tools. The use of log-ratios relies on the assumption that the true (absolute) microbial abundances follow a log-normal distribution.
+
+SparCC uses an iterative algorithm to approximate the covariance matrix of the log-transformed absolute abundances, under the assumption of sparsity (i.e., that most taxa are not strongly correlated). The algorithm estimates initial covariances between all taxon pairs based on log-ratio variances, zeros out the weak covariances to enforce sparsity and then recomputes the variances of the remaining individual taxa given the updated covariances. These steps are repeated iteratively until the covariance matrix converges. 
+
+Finally, the covariance matrix is scaled by the standard deviation of each taxon to produce a correlation matrix. These correlations represent marginal relationships (i.e., they describe how two taxa vary together without adjusting for the influence of the other taxa). 
+
+**Correlation inference for Compositional data through Lasso (CCLasso)**: estimates conditional dependencies between taxa by approximating the inverse covariance matrix (i.e., the precision matrix) of log-transformed compositional data (typically using the centered log-ratio transformation). It assumes that most taxa pairs are conditionally independent (i.e., most taxa pairs are not directly associated). 
+
+Instead of directly inverting the covariance matrix, which can be numerically unstable with high-dimensional or highly correlated data, CCLasso formulates a convex optimization problem to estimate a sparse precision matrix. It does this by applying an L1 (Lasso) penalty to the entries of the precision matrix. This sparsity-inducing penalty shrinks small coefficients toward zero, producing a solution that is sparse and numerically stable. CCLasso selects the optimal sparsity level using k-fold validation, minimizing a log-likelihood-based loss function to balance model fit and model sparsity.
+
+In the resulting precision matrix, non-zero entries indicate conditional dependencies between taxa (i.e., the two taxa are directly associated after accounting for all other taxa in the network).
+
+**Sparse InversE Covariance estimation for Ecological Association and Statistical Inference (SPIEC-EASI)**: estimates conditional dependencies between taxa by approximating the inverse covariance matrix (i.e., the precision matrix) of log-transformed compositional data (typically using the centered log-ratio transformation). It assumes that most taxa pairs are conditionally independent (i.e., most taxa pairs are not directly associated). 
+
+Instead of directly inverting the covariance matrix, which can be numerically unstable with high-dimensional or highly correlated data, SPIEC-EASI formulates a convex optimization problem to estimate a sparse precision matrix. It does this by applying an L1 penalty to promote sparsity, shrinking small coefficients toward zero and producing a solution that is sparse and numerically stable, using one of two methods:
+  - **Graphical Lasso (glasso)**: directly estimates the precision matrix by solving a penalized maximum likelihood problem with an L1 penalty applied to the precision matrix entries.
+  - **Meinshausen-Bühlmann Neighborhood Selection (mb)**: performs a series of L1-penalized regressions, where each taxon is regressed against all others and the resulting associations are then symmetrized to construct the network.
+
+SPIEC-EASI selects the optimal sparsity level using the Stability Approach to Regularization Selection (StARS), which selects a regularization parameter that balances network sparsity with stability (assesses edge variability across subsamples).
+
+In the resulting precision matrix, non-zero entries indicate conditional dependencies between taxa (i.e., the two taxa are directly associated after accounting for all other taxa in the network).
+
