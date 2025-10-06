@@ -152,3 +152,13 @@ SPIEC-EASI selects the optimal sparsity level using the Stability Approach to Re
 
 In the resulting precision matrix, non-zero entries indicate conditional dependencies between taxa (i.e., the two taxa are directly associated after accounting for all other taxa in the network).
 
+## :basket::basket: Enterotyping
+The unsupervised categorization of microbiome samples into clusters (enterotypes) based on community composition (i.e., the relative abundance of taxa that dominate different groups). 
+
+**Dirichlet-Multinomial Mixture (DMM) model**: is one of the most widely used statistical models for enterotyping.
+
+The DMM model assumes that each cluster (enterotype) has a separate Dirichlet-Multinomial distribution. For each sample within a given cluster, a probability vector *p* of taxa abundances is randomly sampled from the Dirichlet distribution for that cluster. The selected probability vector and the sample’s own library size *n* are used to define the multinomial distribution from which that sample’s counts are drawn. Samples are then probabilistically assigned to the cluster whose Dirichlet-Multinomial most likely explains their observed data.
+
+The Dirichlet parameters for each cluster are estimated from the observed count data using maximum likelihood, implemented via the Expectation-Maximization algorithm (EM). During each iteration, the Dirichlet parameters are updated based on a weighted average of the observed counts across all samples, where the weights correspond to each sample’s posterior probability of belonging to that cluster. This process is repeated iteratively to maximize the overall likelihood of the observed data and is continued until convergence is reached. 
+
+The model fitting process is repeated separately for a range of user-defined cluster counts (e.g., k = 1 to k = 5), and the optimal number of clusters is selected using a model selection criterion, such as Bayesian Information Criterion or Laplace approximation. 
