@@ -33,7 +33,10 @@ feat <- read.table("feature_table.txt", header = TRUE)
 feat_t <- as.data.frame(t(feat)) # transpose feature table
 min_prevalence <- 0.30
 feat_filtered <- feat_t[, colMeans(feat_t > 0) >= min_prevalence] # subset the feature table to only include features present in at least 10% of samples
-# feat_species <- as.matrix(feat_filtered) # feature table using species
+feat_species <- as.matrix(feat_filtered) # feature table using species
+
+# rownames of metadata need to match the rownames of the species feature table
+all(rownames(meta) == rownames(feat_species))
 
 ### collapse to genus
 genus_names <- sub("_.*", "", colnames(feat_filtered)) # collapse feature names to genus
@@ -47,13 +50,13 @@ feat_genus <- as.matrix(feat_long_genus[,-1])
 rownames(feat_genus) <- feat_long_genus$genus
 feat_genus <- t(feat_genus) # feature table using genus
 
-# rownames of metadata need to match the rownames of the feature table
+# rownames of metadata need to match the rownames of the genus feature table
 all(rownames(meta) == rownames(feat_genus))
 
 
-##############################################
-#####   DIRICHLET-MULTINOMIAL MODELING   #####
-##############################################
+######################################################
+#####   GENUS - DIRICHLET-MULTINOMIAL MODELING   #####
+######################################################
 
 # fit DMM models for k = 1 to k = 5
 fit_dmm <- mclapply(1:5, function(k) dmn(feat_genus, k = k), mc.cores = parallel::detectCores() - 1)
@@ -99,9 +102,9 @@ table(cluster_ids$cluster, meta$condition)
 fisher.test(table(cluster_ids$cluster, meta$condition)) # Fisher’s exact test
 
 
-#####################################
-#####   PCOA WITH BRAY-CURTIS   #####
-#####################################
+#############################################
+#####   GENUS - PCOA WITH BRAY-CURTIS   #####
+#############################################
 
 # format feature table and metadata
 feat_otu <- t(feat_genus) # transpose genus feature table
@@ -126,7 +129,7 @@ adonis2(bray_dist ~ condition, data = meta) # PERMANOVA condition
 betadisper(bray_dist, group = meta$condition) %>% permutest() # betadispar condition
 boxplot(betadisper(bray_dist, group = meta$condition)) # boxplot condition
 sil_con <- silhouette(as.numeric(as.factor(meta$condition)), dist = bray_dist)
-plot(sil_con, border = NA, main = "Silhouette Plot (Bray-Curtis)") # silhouette plot condition
+plot(sil_con, border = NA, main = "Silhouette plot (Bray-Curtis)") # silhouette plot condition
 
 # PCoA plot by cluster
 plot_ordination(ps_rel, ordination_pcoa_bray, color = "cluster") +
@@ -135,12 +138,12 @@ adonis2(bray_dist ~ cluster, data = meta) # PERMANOVA cluster
 betadisper(bray_dist, group = meta$cluster) %>% permutest() # betadispar cluster
 boxplot(betadisper(bray_dist, group = meta$cluster)) # boxplot cluster
 sil_clus <- silhouette(cluster_assign, dist = bray_dist)
-plot(sil_clus, border = NA, main = "Silhouette Plot (Bray-Curtis)") # silhouette plot cluster
+plot(sil_clus, border = NA, main = "Silhouette plot (Bray-Curtis)") # silhouette plot cluster
 
 
-##########################################
-#####   HEATMAP OF GENUS ABUNDANCE   #####
-##########################################
+##################################################
+#####   GENUS - HEATMAP OF GENUS ABUNDANCE   #####
+##################################################
 
 ### heatmap of genus abundances by cluster
 feat_genus_df <- as.data.frame(feat_genus)
@@ -173,9 +176,9 @@ pheatmap(mean_abundance_scaled,
          clustering_method = "ward.D2")
 
 
-#######################################################
-#####   DESEQ2 - DIFFERENTIAL ABUNDANCE TESTING   #####
-#######################################################
+###############################################################
+#####   GENUS - DESEQ2 - DIFFERENTIAL ABUNDANCE TESTING   #####
+###############################################################
 
 # transpose feat_genus and convert to integer matrix
 count_matrix <- round(as.matrix(t(feat_genus)))
@@ -217,6 +220,174 @@ inc_cluster_two <- intersect(rownames(res_1_2_sig[which(res_1_2_sig$log2FoldChan
 # increased abundance in cluster three
 inc_cluster_three <- intersect(rownames(res_1_3_sig[which(res_1_3_sig$log2FoldChange < 0), ]), 
                                rownames(res_2_3_sig[which(res_2_3_sig$log2FoldChange < 0), ]))
+
+
+########################################################
+#####   SPECIES - DIRICHLET-MULTINOMIAL MODELING   ##### 
+########################################################
+
+# fit DMM models for k = 1 to k = 5
+fit_dmm_sp <- mclapply(1:5, function(k) dmn(feat_species, k = k), mc.cores = parallel::detectCores() - 1)
+
+# compare fit of DMM models using BIC values
+BIC_values_sp <- sapply(fit_dmm_sp, BIC)
+best_k_val_sp <- which.min(BIC_values_sp) # index of best model
+
+# plot BIC values versus number of clusters
+plot(1:5, BIC_values_sp, type = "b", pch = 16,
+     xlab = "Number of clusters", ylab = "BIC values",
+     main = "Model selection using BIC")
+
+# choose best model and assign clusters
+# best_model_sp <- fit_dmm_sp[[best_k_val]]
+best_model_sp <- fit_dmm_sp[[3]]
+
+cluster_probs_sp <- best_model_sp@group
+cluster_assign_sp <- apply(cluster_probs_sp, 1, which.max)
+cluster_ids_sp <- data.frame(sample = rownames(feat_species), cluster = cluster_assign_sp)
+
+
+### plot proportions of clusters by condition and condition by cluster 
+# convert to long format for plotting
+cluster_probs_sp_df <- as.data.frame(cluster_probs_sp)
+cluster_probs_sp_df$sample_id <- rownames(cluster_probs_sp_df) # sample_id
+cluster_probs_sp_df$condition <- meta$condition # condition
+cluster_probs_sp_long <- cluster_probs_sp_df %>%
+  pivot_longer(cols = -c(sample_id, condition), names_to = "cluster", values_to = "abundance")
+
+# plot proportion of cluster by condition
+ggplot(cluster_probs_sp_long, aes(x = cluster, y = abundance, fill = condition)) +
+  geom_bar(stat = "identity", position = "fill") + theme_minimal() +
+  labs(title = "Enterotype composition", y = "Proportion", x = "Cluster")
+
+# plot proportion of condition by cluster
+ggplot(cluster_probs_sp_long, aes(x = condition, y = abundance, fill = cluster)) +
+  geom_bar(stat = "identity", position = "fill") + theme_minimal() +
+  labs(title = "Condition composition", y = "Proportion", x = "Condition")
+
+# enterotype clusters associated with condition
+table(cluster_ids_sp$cluster, meta$condition)
+fisher.test(table(cluster_ids_sp$cluster, meta$condition)) # Fisher’s exact test
+
+
+###############################################
+#####   SPECIES - PCOA WITH BRAY-CURTIS   #####
+###############################################
+
+# format feature table and metadata
+feat_sp_otu <- t(feat_species) # transpose genus feature table
+feat_sp_otu <- otu_table(feat_sp_otu, taxa_are_rows = TRUE) # convert to otu_table
+
+all(colnames(feat_sp_otu) == rownames(meta)) # ensure sample names are the same
+meta$cluster_sp <- as.factor(cluster_assign_sp) # add cluster assignments
+sampledata_sp <- sample_data(meta) # convert to sample_data
+
+ps_sp <- phyloseq(feat_sp_otu, sampledata_sp) # create phyloseq object
+
+ps_rel_sp <- transform_sample_counts(ps_sp, function(x) x / sum(x)) # relative abundance for bray-curtis
+bray_dist_sp <- phyloseq::distance(ps_rel_sp, method = "bray") # bray-curtis
+
+# PCoA ordination
+ordination_pcoa_bray_sp <- ordinate(ps_rel_sp, method = "PCoA", distance = bray_dist_sp)
+
+# PCoA plot by condition
+plot_ordination(ps_rel_sp, ordination_pcoa_bray_sp, color = "condition") +
+  geom_point(size = 2) + ggtitle("PCoA - Bray-Curtis") + theme_minimal()
+adonis2(bray_dist_sp ~ condition, data = meta) # PERMANOVA condition
+betadisper(bray_dist_sp, group = meta$condition) %>% permutest() # betadispar condition
+boxplot(betadisper(bray_dist_sp, group = meta$condition)) # boxplot condition
+sil_con_sp <- silhouette(as.numeric(as.factor(meta$condition)), dist = bray_dist_sp)
+plot(sil_con_sp, border = NA, main = "Silhouette plot (Bray-Curtis)") # silhouette plot condition
+
+# PCoA plot by cluster
+plot_ordination(ps_rel_sp, ordination_pcoa_bray_sp, color = "cluster_sp") +
+  geom_point(size = 2) + ggtitle("PCoA - Bray-Curtis") + theme_minimal()
+adonis2(bray_dist_sp ~ cluster_sp, data = meta) # PERMANOVA cluster
+betadisper(bray_dist_sp, group = meta$cluster_sp) %>% permutest() # betadispar cluster
+boxplot(betadisper(bray_dist_sp, group = meta$cluster_sp)) # boxplot cluster
+sil_clus_sp <- silhouette(cluster_assign_sp, dist = bray_dist_sp)
+plot(sil_clus_sp, border = NA, main = "Silhouette plot (Bray-Curtis)") # silhouette plot cluster
+
+
+######################################################
+#####   SPECIES - HEATMAP OF SPECIES ABUNDANCE   #####
+######################################################
+
+### heatmap of species abundances by cluster
+feat_species_df <- as.data.frame(feat_species)
+feat_species_df$sample <- rownames(feat_species_df)
+feat_species_df$cluster <- cluster_ids_sp$cluster # add cluster ids to genus feature table
+
+# mean abundance of species per cluster
+mean_abundance_sp <- feat_species_df %>%
+  group_by(cluster) %>%
+  summarise(across(-sample, mean), .groups = "drop") %>%
+  column_to_rownames("cluster")
+mean_abundance_sp <- as.data.frame(t(mean_abundance_sp))
+
+# subset to top 25 most variable genera
+taxa_variance_sp <- apply(mean_abundance_sp, 1, var) # calculate variance for each species across clusters
+top25_taxa_sp <- names(sort(taxa_variance_sp, decreasing = TRUE))[1:25] # top 25 most variable species
+mean_abundance_top25_sp <- mean_abundance_sp[top25_taxa_sp, ] # subset mean_abundance to top 25 species
+mean_abundance_scaled_sp <- t(scale(t(mean_abundance_top25_sp))) # scale data (z-score scaling)
+
+# plot heatmap
+my_palette <- colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))(100)
+pheatmap(mean_abundance_scaled_sp, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE,
+         main = "Top 25 most variable taxa",
+         fontsize_row = 8,
+         fontsize_col = 10,
+         border_color = NA,
+         color = my_palette,
+         clustering_method = "ward.D2")
+
+
+#################################################################
+#####   SPECIES - DESEQ2 - DIFFERENTIAL ABUNDANCE TESTING   #####
+#################################################################
+
+# transpose feat_genus and convert to integer matrix
+count_matrix_sp <- round(as.matrix(t(feat_species)))
+
+# add cluster assignment to metadata
+meta$cluster_sp <- as.factor(cluster_assign_sp)
+table(meta$cluster_sp)
+
+# ensure sample names are the same
+all(colnames(count_matrix_sp) == rownames(meta))
+
+
+# create DESeq2 dataset
+dds_sp <- DESeqDataSetFromMatrix(countData = count_matrix_sp,
+                              colData = meta,
+                              design = ~ cluster_sp)
+
+# run DESeq2 analysis
+dds_sp <- DESeq(dds_sp)
+
+# pairwise comparisons and shrink log2fold change estimates using the ashr method
+res_1_2_sp <- lfcShrink(dds_sp, contrast = c("cluster_sp", "1", "2"), type = "ashr")
+res_1_3_sp <- lfcShrink(dds_sp, contrast = c("cluster_sp", "1", "3"), type = "ashr")
+res_2_3_sp <- lfcShrink(dds_sp, contrast = c("cluster_sp", "2", "3"), type = "ashr")
+
+# filter for significant results
+res_1_2_sig_sp <- res_1_2_sp[which(res_1_2_sp$padj < 0.05), ] %>% as.data.frame() %>% arrange(log2FoldChange)
+res_1_3_sig_sp <- res_1_3_sp[which(res_1_3_sp$padj < 0.05), ] %>% as.data.frame() %>% arrange(log2FoldChange)
+res_2_3_sig_sp <- res_2_3_sp[which(res_2_3_sp$padj < 0.05), ] %>% as.data.frame() %>% arrange(log2FoldChange)
+
+# increased abundance in cluster one
+inc_cluster_one_sp <- intersect(rownames(res_1_2_sig_sp[which(res_1_2_sig_sp$log2FoldChange > 0), ]), 
+                                rownames(res_1_3_sig_sp[which(res_1_3_sig_sp$log2FoldChange > 0), ]))
+
+# increased abundance in cluster two
+inc_cluster_two_sp <- intersect(rownames(res_1_2_sig_sp[which(res_1_2_sig_sp$log2FoldChange < 0), ]), 
+                                rownames(res_2_3_sig_sp[which(res_2_3_sig_sp$log2FoldChange > 0), ]))
+
+# increased abundance in cluster three
+inc_cluster_three_sp <- intersect(rownames(res_1_3_sig_sp[which(res_1_3_sig_sp$log2FoldChange < 0), ]), 
+                                  rownames(res_2_3_sig_sp[which(res_2_3_sig_sp$log2FoldChange < 0), ]))
 
 
 sessionInfo()
