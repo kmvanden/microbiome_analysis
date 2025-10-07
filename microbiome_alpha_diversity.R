@@ -77,7 +77,6 @@ alpha_vegan <- left_join(alpha_vegan, meta, by = "sample_name")
 alpha_combined <- left_join(alpha_phyloseq, alpha_vegan, by = "sample_name", suffix = c("_phyloseq", "_vegan"))
 alpha_combined$condition_phyloseq <- NULL
 alpha_combined <- alpha_combined %>% rename(condition = condition_vegan)
-alpha_combined$condition_vegan <- "condition"
 
 
 ### plot alpha diversity metrics and compute statistics
@@ -106,7 +105,7 @@ wilcox.test(Simpson ~ condition, data = alpha_combined)
 ggplot(alpha_combined, aes(x = condition, y = Chao1, fill = condition)) +
   geom_boxplot() + theme_minimal() +
   geom_jitter(width = 0.2, alpha = 0.5) +
-  labs(title = "Chao1 Estimator - phyloseq", y = "Simpson index")
+  labs(title = "Chao1 Estimator - phyloseq", y = "Chao1 estimator")
 wilcox.test(Chao1 ~ condition, data = alpha_combined)
 
 
