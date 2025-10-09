@@ -94,38 +94,48 @@ plot_ordination(ps_clr, ordination_pcoa_aitchison, color = "condition") +
 # NMDS ordination
 ordination_nmds_bray <- ordinate(ps_rel, method = "NMDS", distance = bray_dist) # bray-curtis
 ordination_nmds_jaccard <- ordinate(ps_pa, method = "NMDS", distance = jaccard_dist) # jaccard
-# ordination_nmds_euc <- ordinate(ps_log, method = "NMDS", distance = euc_dist) # euclidean
 ordination_nmds_canberra <- ordinate(ps_rel, method = "NMDS", distance = canberra_dist) # canberra
-# ordination_nmds_aitchison <- ordinate(ps_clr, method = "NMDS", distance = aitchison_dist) # aitchison
 
 # NMDS plots
 plot_ordination(ps_rel, ordination_nmds_bray, color = "condition") +
   geom_point(size = 2) + ggtitle("NMDS - Bray-Curtis") + theme_minimal() # bray-curtis
 plot_ordination(ps_pa, ordination_nmds_jaccard, color = "condition") +
   geom_point(size = 2) + ggtitle("NMDS - Jaccard") + theme_minimal() # jaccard
-plot_ordination(ps_log, ordination_nmds_euc, color = "condition") +
-  geom_point(size = 2) + ggtitle("NMDS - Euclidean") + theme_minimal() # euclidean
 plot_ordination(ps_rel, ordination_nmds_canberra, color = "condition") +
   geom_point(size = 2) + ggtitle("NMDS - Canberra") + theme_minimal() # canberra
-plot_ordination(ps_clr, ordination_nmds_aitchison, color = "condition") +
-  geom_point(size = 2) + ggtitle("NMDS - Aitchison") + theme_minimal() # aitchison
 
 
-### PCA on CLR-transformed data
-# prepare data
+### extract PCA data
+# euclidean
+log_otu <- t(otu_table(ps_log)) # extract CLR-transformed data and transpose
+pca_euc <- prcomp(log_otu, center = TRUE, scale. = FALSE) # run PCA
+pca_euc_df <- as.data.frame(pca_euc$x) # extract PCA scores (coordinates)
+pca_euc_df$sample_name <- rownames(pca_euc_df)
+pca_euc_df <- left_join(pca_euc_df, meta, by = "sample_name")  # join with metadata
+euc_var_explained <- round(100 * summary(pca_euc)$importance[2, 1:2], 1) # extract percentage of variance explained
+
+# aitchison
 clr_otu <- t(otu_table(ps_clr)) # extract CLR-transformed data and transpose
-pca_clr <- prcomp(clr_otu, center = TRUE, scale. = FALSE) # run PCA
-pca_df <- as.data.frame(pca_clr$x) # extract PCA scores (coordinates)
-pca_df$sample_name <- rownames(pca_df)
-pca_df <- left_join(pca_df, meta, by = "sample_name")  # join with metadata
-var_explained <- round(100 * summary(pca_clr)$importance[2, 1:2], 1) # extract percentage of variance explained
+pca_ait <- prcomp(clr_otu, center = TRUE, scale. = FALSE) # run PCA
+pca_ait_df <- as.data.frame(pca_ait$x) # extract PCA scores (coordinates)
+pca_ait_df$sample_name <- rownames(pca_ait_df)
+pca_ait_df <- left_join(pca_ait_df, meta, by = "sample_name")  # join with metadata
+ait_var_explained <- round(100 * summary(pca_ait)$importance[2, 1:2], 1) # extract percentage of variance explained
 
-# PCA plot of CLR-transformed data
-ggplot(pca_df, aes(x = PC1, y = PC2, color = condition)) + 
+### PCA plots
+# euclidean
+ggplot(pca_euc_df, aes(x = PC1, y = PC2, color = condition)) + 
   geom_point(size = 2) + theme_minimal() + stat_ellipse(type = "norm", level = 0.95) +
-  labs(title = "PCA of CLR-transformed data", 
-       x = paste0("PC1 (", var_explained[1], "% variance)"), 
-       y = paste0("PC2 (", var_explained[2], "% variance)"))
+  labs(title = "PCA of log-transformed data (euclidean)", 
+       x = paste0("PC1 (", euc_var_explained[1], "% variance)"), 
+       y = paste0("PC2 (", euc_var_explained[2], "% variance)"))
+
+# aitchison
+ggplot(pca_ait_df, aes(x = PC1, y = PC2, color = condition)) + 
+  geom_point(size = 2) + theme_minimal() + stat_ellipse(type = "norm", level = 0.95) +
+  labs(title = "PCA of CLR-transformed data (aitchison)", 
+       x = paste0("PC1 (", ait_var_explained[1], "% variance)"), 
+       y = paste0("PC2 (", ait_var_explained[2], "% variance)"))
 
 
 ######################################################################
@@ -201,38 +211,48 @@ plot_ordination(ps_clr, ordination_pcoa_aitchison, color = "condition") + stat_e
 # NMDS ordination
 ordination_nmds_bray <- ordinate(ps_rel, method = "NMDS", distance = bray_dist) # bray-curtis
 ordination_nmds_jaccard <- ordinate(ps_pa, method = "NMDS", distance = jaccard_dist) # jaccard
-ordination_nmds_euc <- ordinate(ps_log, method = "NMDS", distance = euc_dist) # euclidean
 ordination_nmds_canberra <- ordinate(ps_rel, method = "NMDS", distance = canberra_dist) # canberra
-ordination_nmds_aitchison <- ordinate(ps_clr, method = "NMDS", distance = aitchison_dist) # aitchison
 
 # NMDS plots
 plot_ordination(ps_rel, ordination_nmds_bray, color = "condition") + stat_ellipse(type = "norm", level = 0.95) +
   geom_point(size = 2) + ggtitle("NMDS - Bray-Curtis") + theme_minimal() # bray-curtis
 plot_ordination(ps_pa, ordination_nmds_jaccard, color = "condition") + stat_ellipse(type = "norm", level = 0.95) +
   geom_point(size = 2) + ggtitle("NMDS - Jaccard") + theme_minimal() # jaccard
-plot_ordination(ps_log, ordination_nmds_euc, color = "condition") + stat_ellipse(type = "norm", level = 0.95) +
-  geom_point(size = 2) + ggtitle("NMDS - Euclidean") + theme_minimal() # euclidean
 plot_ordination(ps_rel, ordination_nmds_canberra, color = "condition") + stat_ellipse(type = "norm", level = 0.95) +
   geom_point(size = 2) + ggtitle("NMDS - Canberra") + theme_minimal() # canberra
-plot_ordination(ps_clr, ordination_nmds_aitchison, color = "condition") + stat_ellipse(type = "norm", level = 0.95) +
-  geom_point(size = 2) + ggtitle("NMDS - Aitchison") + theme_minimal() # aitchison
 
 
-### PCA on CLR-transformed data
-# prepare data
+### extract PCA data
+# euclidean
+log_otu <- t(otu_table(ps_log)) # extract CLR-transformed data and transpose
+pca_euc <- prcomp(log_otu, center = TRUE, scale. = FALSE) # run PCA
+pca_euc_df <- as.data.frame(pca_euc$x) # extract PCA scores (coordinates)
+pca_euc_df$sample_name <- rownames(pca_euc_df)
+pca_euc_df <- left_join(pca_euc_df, meta, by = "sample_name")  # join with metadata
+euc_var_explained <- round(100 * summary(pca_euc)$importance[2, 1:2], 1) # extract percentage of variance explained
+
+# aitchison
 clr_otu <- t(otu_table(ps_clr)) # extract CLR-transformed data and transpose
-pca_clr <- prcomp(clr_otu, center = TRUE, scale. = FALSE) # run PCA
-pca_df <- as.data.frame(pca_clr$x) # extract PCA scores (coordinates)
-pca_df$sample_name <- rownames(pca_df)
-pca_df <- left_join(pca_df, meta, by = "sample_name")  # join with metadata
-var_explained <- round(100 * summary(pca_clr)$importance[2, 1:2], 1) # extract percentage of variance explained
+pca_ait <- prcomp(clr_otu, center = TRUE, scale. = FALSE) # run PCA
+pca_ait_df <- as.data.frame(pca_ait$x) # extract PCA scores (coordinates)
+pca_ait_df$sample_name <- rownames(pca_ait_df)
+pca_ait_df <- left_join(pca_ait_df, meta, by = "sample_name")  # join with metadata
+ait_var_explained <- round(100 * summary(pca_ait)$importance[2, 1:2], 1) # extract percentage of variance explained
 
-# PCA plot of CLR-transformed data
-ggplot(pca_df, aes(x = PC1, y = PC2, color = condition)) + 
+### PCA plots
+# euclidean
+ggplot(pca_euc_df, aes(x = PC1, y = PC2, color = condition)) + 
   geom_point(size = 2) + theme_minimal() + stat_ellipse(type = "norm", level = 0.95) +
-  labs(title = "PCA of CLR-transformed data", 
-       x = paste0("PC1 (", var_explained[1], "% variance)"), 
-       y = paste0("PC2 (", var_explained[2], "% variance)"))
+  labs(title = "PCA of log-transformed data (euclidean)", 
+       x = paste0("PC1 (", euc_var_explained[1], "% variance)"), 
+       y = paste0("PC2 (", euc_var_explained[2], "% variance)"))
+
+# aitchison
+ggplot(pca_ait_df, aes(x = PC1, y = PC2, color = condition)) + 
+  geom_point(size = 2) + theme_minimal() + stat_ellipse(type = "norm", level = 0.95) +
+  labs(title = "PCA of CLR-transformed data (aitchison)", 
+       x = paste0("PC1 (", ait_var_explained[1], "% variance)"), 
+       y = paste0("PC2 (", ait_var_explained[2], "% variance)"))
 
 
 ###################################################################################
