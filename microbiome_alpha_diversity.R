@@ -7,6 +7,7 @@ library(phyloseq)
 library(vegan)
 library(breakaway)
 library(DivNet)
+library(doParallel)
 
 
 # setwd
@@ -36,17 +37,21 @@ sampledata <- sample_data(meta) # convert to sample_data
 # create phyloseq object
 ps <- phyloseq(feat_otu, sampledata)
 
-# rarefy the phyloseq object (using the minimum sequencing depth of the samples)
+# rarefy the phyloseq object (for Observed richness)
 sample_sums(ps) %>% summary() # check sequencing depth (rarefaction depth based on sequencing depth)
 ps_rarefied <- rarefy_even_depth(ps, rngseed = 1234, sample.size = min(sample_sums(ps)), verbose = FALSE)
 
+# relative abundance for Shannon and Simpson
+ps_rel <- transform_sample_counts(ps, function(x) x / sum(x)) 
+
 # calculate alpha diversity using phyloseq
-alpha_phyloseq <- estimate_richness(ps_rarefied, measures = c("Observed", "Shannon", "Simpson"))
-alpha_chao <- estimate_richness(ps, measures = "Chao1") # use feature table without rarefaction with Chao1
-alpha_phyloseq$Chao1 <- alpha_chao$Chao1 # add Chao1 to alpha_phyloseq
-alpha_phyloseq$se.chao1 <- alpha_chao$se.chao1 # add se.chao1 to alpha_phyloseq
+alpha_phyloseq <- estimate_richness(ps_rel, measures = c("Shannon", "Simpson"))
+chao_df <- estimate_richness(ps, measures = "Chao1")
+observed_df <- estimate_richness(ps_rarefied, measures = "Observed")
+alpha_phyloseq$Chao1 <- chao_df$Chao1 # add Chao1 to alpha_phyloseq
+alpha_phyloseq$Observed <- observed_df$Observed # add Observed to alpha_phyloseq
 alpha_phyloseq$sample_name <- rownames(alpha_phyloseq) # add column with sample names
-alpha_phyloseq <- left_join(alpha_phyloseq, meta, by = "sample_name") # merge phyloseq object with metadata (for plotting and statistical tests) 
+alpha_phyloseq <- left_join(alpha_phyloseq, meta, by = c("sample_name" = "sample_id")) # merge phyloseq object with metadata (for plotting and statistical tests) 
 
 
 ### alpha diversity analysis with vegan
@@ -59,10 +64,13 @@ rarecurve(otu_vegan, step = 1000, col = "blue", label = TRUE) # visualize rarefa
 set.seed(1234)  # set seed
 otu_vegan_rarefied <- rrarefy(otu_vegan, sample = min(rowSums(otu_vegan)))
 
+# relative abundance transformation of feature table
+otu_vegan_rel <- otu_vegan/rowSums(otu_vegan)
+
 # calculate alpha diversity using vegan
 richness <- specnumber(otu_vegan_rarefied)
-shannon <- diversity(otu_vegan_rarefied, index = "shannon")
-simpson <- diversity(otu_vegan_rarefied, index = "simpson")
+shannon <- diversity(otu_vegan_rel, index = "shannon")
+simpson <- diversity(otu_vegan_rel, index = "simpson")
 
 # combine alpha diversity metrics into a data.frame
 alpha_vegan <- data.frame(sample_name = rownames(otu_vegan_rarefied),
@@ -113,7 +121,31 @@ wilcox.test(Chao1 ~ condition, data = alpha_combined)
 #####   ALPHA DIVERSITY ANALYSIS - STATISTICAL MODEL-BASED APPROACHES   #####
 #############################################################################
 
-### create a phyloseq object 
+### calculate breakaway richness
+# transpose feature table
+feat_t <- as.data.frame(t(feat))
+
+# breakaway richness per sample (breakaway expects a count vector per sample)
+breakaway_richness_df <- purrr::map_dfr(rownames(feat_t), function(s) {
+  ba <- breakaway(as.numeric(feat_t[s, ]))
+  data.frame(sample_id = s,
+             estimate = ba$estimate,
+             se = ba$se)
+}) %>% left_join(meta, by = c("sample_id" = "sample_name")) # merge with metadata
+
+# plot richness
+ggplot(breakaway_richness_df, aes(x = condition, y = richness, fill = condition)) +
+  geom_boxplot() + theme_minimal() +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "Richness estimate - breakaway", y = "Richness estimate", x = "")
+
+betta_rich <- betta(formula = richness ~ condition,
+                    data = breakaway_richness_df,
+                    ses = "se")
+betta_rich$table
+
+
+### calculate Shannon and Simpson diversity using DivNet
 # format feature table and metadata
 feat_otu <- as.matrix(feat) # convert feature table to matrix
 feat_otu <- otu_table(feat_otu, taxa_are_rows = TRUE) # convert to otu_table
@@ -124,91 +156,42 @@ sampledata <- sample_data(meta) # convert to sample_data
 # create phyloseq object
 ps <- phyloseq(feat_otu, sampledata)
 
+# Shannon and Simpson diversity
+divnet_diversity <- divnet(ps, ncores = parallel::detectCores() - 1)
 
-### alpha diversity analysis with breakaway
-# feature table must include singletons (features with 1 read) and doubletons (features with 2 reads)
-# breakaway uses these low frequency taxa ti estimate unseen richness
-# many preprocesing steps (including bracken with the parameter --threshold/-t) remove taxa with very low reads
-feat_otu_trans <- t(feat_otu) # transpose count matrix 
-
-# run breakway per sample
-breakaway_results <- lapply(1:nrow(feat_otu_trans), function(i) {
-  tryCatch(breakaway(feat_otu_trans[i, ]),
-           error = function(e) return(NULL))
-})
-
-# extract richness estimates and sample names
-rich_est <- data.frame(sample_name = rownames(feat_otu_trans),
-                       richness = sapply(breakaway_results, function(x) if (!is.null(x)) x$estimate else NA),
-                       error = sapply(breakaway_results, function(x) if (!is.null(x)) x$error else NA))
-
-# merge estimates with metadata
-rich_est <- left_join(rich_est, meta, by = "sample_name")
-
-# design matrix with condition as grouping variable
-design_matrix_rich <- model.matrix(~ condition, data = rich_est)
-
-# plot richness
-ggplot(rich_est, aes(x = condition, y = richness, fill = condition)) +
-  geom_boxplot() + theme_minimal() +
-  geom_jitter(width = 0.2, alpha = 0.6) +
-  labs(title = "Richness estimate - breakaway", y = "Richness estimate", x = "")
-
-# model-based hypothesis testing for richness
-betta_rich <- betta(rich_est$richness,
-                    rich_est$error,
-                    X = design_matrix_rich)
-betta_rich$table
-
-
-### alpha diversity analysis with DivNet
-# run DivNet
-# most abundant feature in each sample
-most_abundant_taxa <- apply(feat, 2, function(x) {
-  feature_index <- which.max(x) # get index of max value
-  feature_name <- rownames(feat)[feature_index] # get feature name
-  return(feature_name)
-})
-divnet_results <- divnet(ps, B = 5, base = NULL)
-# saveRDS(divnet_results, file = "divnet_results.rds")
-# divnet_results <- readRDS("divnet_results.rds")
-
-
-# extract Shannon and Simpson diversity estimates
-alpha_diver_est <- data.frame(sample_name = names(divnet_results$shannon),
-                              shannon_estimate = sapply(divnet_results$shannon, function(x) x$estimate),
-                              shannon_error = sapply(divnet_results$shannon, function(x) x$error),
-                              simpson_estimate = sapply(divnet_results$simpson, function(x) x$estimate),
-                              simpson_error = sapply(divnet_results$simpson, function(x) x$error))
+# convert to data.frame
+divnet_alpha_diversity <- data.frame(sample_name = names(divnet_diversity$shannon),
+                                     shannon_estimate = sapply(divnet_diversity$shannon, function(x) x$estimate),
+                                     shannon_error = sapply(divnet_diversity$shannon, function(x) x$error),
+                                     simpson_estimate = sapply(divnet_diversity$simpson, function(x) x$estimate),
+                                     simpson_error = sapply(divnet_diversity$simpson, function(x) x$error))
 
 # merge with metadata
-alpha_diver_est <- left_join(alpha_diver_est, meta, by = "sample_name")
-
-# design matrix with condition as grouping variable
-design_matrix_alpha <- model.matrix(~ condition, data = alpha_diver_est)
+divnet_alpha_diversity_df <- divnet_alpha_diversity %>%
+  left_join(meta, by = "sample_name")
 
 # plot Shannon diversity
-ggplot(alpha_diver_est, aes(x = condition, y = shannon_estimate, fill = condition)) +
+ggplot(divnet_alpha_diversity_df, aes(x = condition, y = shannon_estimate, fill = condition)) +
   geom_boxplot() + theme_minimal() +
   geom_jitter(width = 0.2, alpha = 0.6) +
   labs(title = "Shannon diversity - DivNet", y = "Shannon estimate", x = "")
 
 # plot Simpson diversity
-ggplot(alpha_diver_est, aes(x = condition, y = simpson_estimate, fill = condition)) +
+ggplot(divnet_alpha_diversity_df, aes(x = condition, y = simpson_estimate, fill = condition)) +
   geom_boxplot() + theme_minimal() +
   geom_jitter(width = 0.2, alpha = 0.6) +
   labs(title = "Simpson diversity - DivNet", y = "Simpson estimate", x = "")
 
 # model-based hypothesis testing for shannon diversity 
-betta_shan <- betta(alpha_diver_est$shannon_estimate, 
-                    alpha_diver_est$shannon_error, 
-                    X = design_matrix_alpha)
+betta_shan <- betta(formula = shannon_estimate ~ condition,
+                    data = divnet_alpha_diversity_df,
+                    ses = "shannon_error")
 betta_shan$table
 
 # model-based hypothesis testing for simpson diversity 
-betta_simp <- betta(alpha_diver_est$simpson_estimate, 
-                    alpha_diver_est$simpson_error, 
-                    X = design_matrix_alpha)
+betta_simp <- betta(formula = simpson_estimate ~ condition,
+                    data = divnet_alpha_diversity_df,
+                    ses = "simpson_error")
 betta_simp$table
 
 
