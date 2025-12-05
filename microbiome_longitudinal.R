@@ -25,6 +25,7 @@ library(compositions)
 library(mgcv)
 library(LinDA)
 library(glmmTMB)
+library(DHARMa)
 
 
 # setwd
@@ -40,9 +41,9 @@ meta$day_factor <- factor(meta$day) # add day as a factor for plotting
 feat <- read.table("otu_table_gavage.txt", header = TRUE)
 
 
-##################################################################################
-#####   ALPHA DIVERSITY ANALYSIS - TRADITONAL ECOLOGICAL DIVERSITY METRICS   #####
-##################################################################################
+################################################################
+#####   ALPHA DIVERSITY ANALYSIS - COMPUTATION AND PLOTS   #####
+################################################################
 
 # format feature table and metadata
 feat_otu <- as.matrix(feat) # convert feature table to matrix
@@ -61,7 +62,8 @@ ps_rarefied <- rarefy_even_depth(ps, rngseed = 1234, sample.size = min(sample_su
 # relative abundance for Shannon and Simpson
 ps_rel <- transform_sample_counts(ps, function(x) x / sum(x)) 
 
-# calculate alpha diversity using phyloseq
+
+### calculate traditional alpha diversity metrics using phyloseq
 alpha_phyloseq <- estimate_richness(ps_rel, measures = c("Shannon", "Simpson"))
 chao_df <- estimate_richness(ps, measures = "Chao1")
 observed_df <- estimate_richness(ps_rarefied, measures = "Observed")
@@ -69,6 +71,34 @@ alpha_phyloseq$Chao1 <- chao_df$Chao1 # add Chao1 to alpha_phyloseq
 alpha_phyloseq$Observed <- observed_df$Observed # add Observed to alpha_phyloseq
 alpha_phyloseq$sample_name <- rownames(alpha_phyloseq) # add column with sample names
 alpha_phyloseq <- left_join(alpha_phyloseq, meta, by = c("sample_name" = "sample_id")) # merge phyloseq object with metadata (for plotting and statistical tests) 
+
+
+### calculate breakaway richness
+# transpose feature table
+feat_t <- as.data.frame(t(feat))
+
+# breakaway richness per sample (breakaway expects a count vector per sample)
+breakaway_richness_df <- purrr::map_dfr(rownames(feat_t), function(s) {
+  ba <- breakaway(as.numeric(feat_t[s, ]))
+  data.frame(sample_id = s,
+             estimate = ba$estimate,
+             se = ba$se)
+}) %>% left_join(meta, by = "sample_id") # merge with metadata
+
+
+### calculate Shannon and Simpson diversity using DivNet
+divnet_diversity <- divnet(ps, ncores = parallel::detectCores() - 1)
+
+# convert to data.frame
+divnet_alpha_diversity <- data.frame(sample_id = names(divnet_diversity$shannon),
+                                     shannon_estimate = sapply(divnet_diversity$shannon, function(x) x$estimate),
+                                     shannon_error = sapply(divnet_diversity$shannon, function(x) x$error),
+                                     simpson_estimate = sapply(divnet_diversity$simpson, function(x) x$estimate),
+                                     simpson_error = sapply(divnet_diversity$simpson, function(x) x$error))
+
+# merge with metadata
+divnet_alpha_diversity_df <- divnet_alpha_diversity %>%
+  left_join(meta, by = "sample_id")
 
 
 ### plot alpha diversity metrics
@@ -96,8 +126,30 @@ ggplot(alpha_phyloseq, aes(x = day, y = Chao1, color = gavage)) +
   stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
   labs(title = "Chao1 estimator", y = "Chao1 richness estimate", x = "Day")
 
+# breakaway richness
+ggplot(breakaway_richness_df, aes(x = day, y = estimate, color = gavage)) +
+  geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
+  stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
+  labs(title = "Richness (breakaway)", y = "Estimated total taxa", x = "Day")
 
-### compute statistics (linear mixed-effects model)
+# DivNet Shannon diversity
+ggplot(divnet_alpha_diversity_df, aes(x = day, y = shannon_estimate, color = gavage)) +
+  geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
+  stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
+  labs(title = "Shannon diversity (DivNet)", y = "Shannon index", x = "Day")
+
+# DivNet Simpson diversity
+ggplot(divnet_alpha_diversity_df, aes(x = day, y = simpson_estimate, color = gavage)) +
+  geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
+  stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
+  labs(title = "Simpson diversity (DivNet)", y = "Simpson index", x = "Day")
+
+
+######################################################################
+#####   ALPHA DIVERSITY ANALYSIS - LINEAR MIXED-EFFECTS MODELS   #####
+######################################################################
+
+### compute statistics (linear mixed-effects models)
 ### Observed richness
 lme_Obs_n <- lmer(Observed ~ gavage * day + (1 | mouse_id), data = alpha_phyloseq) # numeric (linear dynamics)
 summary(lme_Obs_n)
@@ -160,70 +212,6 @@ emm_Chao_f <- emmeans(lme_Chao_f, ~ gavage | day_factor)
 pairs(emm_Chao_f, adjust = "tukey")
 
 
-#############################################################################
-#####   ALPHA DIVERSITY ANALYSIS - STATISTICAL MODEL-BASED APPROACHES   #####
-#############################################################################
-
-### calculate breakaway richness
-# transpose feature table
-feat_t <- as.data.frame(t(feat))
-
-# breakaway richness per sample (breakaway expects a count vector per sample)
-breakaway_richness_df <- purrr::map_dfr(rownames(feat_t), function(s) {
-  ba <- breakaway(as.numeric(feat_t[s, ]))
-  data.frame(sample_id = s,
-             estimate = ba$estimate,
-             se = ba$se)
-}) %>% left_join(meta, by = "sample_id") # merge with metadata
-
-
-### calculate Shannon and Simpson diversity using DivNet
-# format feature table and metadata
-feat_otu <- as.matrix(feat) # convert feature table to matrix
-feat_otu <- otu_table(feat_otu, taxa_are_rows = TRUE) # convert to otu_table
-
-all(colnames(feat_otu) == rownames(meta)) # ensure sample names are the same
-sampledata <- sample_data(meta) # convert to sample_data
-
-# create phyloseq object
-ps <- phyloseq(feat_otu, sampledata)
-
-# Shannon and Simpson diversity
-divnet_diversity <- divnet(ps, ncores = parallel::detectCores() - 1)
-
-# convert to data.frame
-divnet_alpha_diversity <- data.frame(sample_id = names(divnet_diversity$shannon),
-                                     shannon_estimate = sapply(divnet_diversity$shannon, function(x) x$estimate),
-                                     shannon_error = sapply(divnet_diversity$shannon, function(x) x$error),
-                                     simpson_estimate = sapply(divnet_diversity$simpson, function(x) x$estimate),
-                                     simpson_error = sapply(divnet_diversity$simpson, function(x) x$error))
-
-# merge with metadata
-divnet_alpha_diversity_df <- divnet_alpha_diversity %>%
-  left_join(meta, by = "sample_id")
-
-
-### plot alpha diversity metrics
-# breakaway richness
-ggplot(breakaway_richness_df, aes(x = day, y = estimate, color = gavage)) +
-  geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
-  stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
-  labs(title = "Richness (breakaway)", y = "Estimated total taxa", x = "Day")
-
-# DivNet Shannon diversity
-ggplot(divnet_alpha_diversity_df, aes(x = day, y = shannon_estimate, color = gavage)) +
-  geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
-  stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
-  labs(title = "Shannon diversity (DivNet)", y = "Shannon index", x = "Day")
-
-# DivNet Simpson diversity
-ggplot(divnet_alpha_diversity_df, aes(x = day, y = simpson_estimate, color = gavage)) +
-  geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
-  stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
-  labs(title = "Simpson diversity (DivNet)", y = "Simpson index", x = "Day")
-
-
-### compute statistics (linear mixed-effects model)
 ### richness (breakaway)
 lme_b_Obs_n <- lmer(estimate ~ gavage * day + (1 | mouse_id), data = breakaway_richness_df, # numeric (linear dynamics)
                     weights = 1 / se^2) # inverse-variance weighting
@@ -259,20 +247,79 @@ emm_dn_Shan_f <- emmeans(lme_dn_Shan_f, ~ gavage | day_factor)
 pairs(emm_dn_Shan_f, adjust = "tukey")
 
 
-### Simpson diversity
-lme_Simp_n <- lmer(simpson_estimate ~ gavage * day + (1 | mouse_id), data = divnet_alpha_diversity_df, # numeric (linear dynamics)
+### Simpson diversity (DivNet)
+lme_dn_Simp_n <- lmer(simpson_estimate ~ gavage * day + (1 | mouse_id), data = divnet_alpha_diversity_df, # numeric (linear dynamics)
                    weights = 1 / (simpson_error^2)) # inverse-variance weighting
-anova(lme_Simp_n)
-summary(lme_Simp_n)
+anova(lme_dn_Simp_n)
+summary(lme_dn_Simp_n)
 
-lme_Simp_f <- lmer(simpson_estimate ~ gavage * day_factor + (1 | mouse_id), data = divnet_alpha_diversity_df, # factor
+lme_dn_Simp_f <- lmer(simpson_estimate ~ gavage * day_factor + (1 | mouse_id), data = divnet_alpha_diversity_df, # factor
                    weights = 1 / (simpson_error^2)) # inverse-variance weighting
-anova(lme_Simp_f)
-summary(lme_Simp_f)
+anova(lme_dn_Simp_f)
+summary(lme_dn_Simp_f)
 
 # pairwise contrasts within each day
-emm_Simp_f <- emmeans(lme_Simp_f, ~ gavage | day_factor)
-pairs(emm_Simp_f, adjust = "tukey")
+emm_dn_Simp_f <- emmeans(lme_dn_Simp_f, ~ gavage | day_factor)
+pairs(emm_dn_Simp_f, adjust = "tukey")
+
+
+############################################################################
+#####   ALPHA DIVERSITY ANALYSIS - GENERALIZED ADDITIVE MIXED MODELS   #####
+############################################################################
+
+### compute statistics (generalized additive mixed models)
+alpha_phyloseq$gavage <- as.factor(alpha_phyloseq$gavage) 
+breakaway_richness_df$gavage <- as.factor(breakaway_richness_df$gavage)
+divnet_alpha_diversity_df$gavage <- as.factor(divnet_alpha_diversity_df$gavage)
+
+
+### Observed richness
+gamm_Obs <- gamm(Observed ~ s(day, k = 4, by = gavage) + gavage, 
+                 random = list(mouse_id = ~1),
+                 data = alpha_phyloseq)
+summary(gamm_Obs$gam)
+
+
+### Shannon diversity
+gamm_Shan <- gamm(Shannon ~ s(day, k = 4, by = gavage) + gavage, 
+                  random = list(mouse_id = ~1),
+                  data = alpha_phyloseq)
+summary(gamm_Shan$gam)
+
+
+### Simpson diversity
+gamm_Simp <- gamm(Simpson ~ s(day, k = 4, by = gavage) + gavage, 
+                  random = list(mouse_id = ~1),
+                  data = alpha_phyloseq)
+summary(gamm_Simp$gam)
+
+
+### Chao1 diversity
+gamm_Chao <- gamm(Chao1 ~ s(day, k = 4, by = gavage) + gavage, 
+                  random = list(mouse_id = ~1),
+                  data = alpha_phyloseq)
+summary(gamm_Chao$gam)
+
+
+### richness (breakaway)
+gamm_b_Obs <- gamm(estimate ~ s(day, k = 4, by = gavage) + gavage, 
+                   random = list(mouse_id = ~1),
+                   data = breakaway_richness_df)
+summary(gamm_b_Obs$gam)
+
+
+### Shannon diversity (DivNet)
+gamm_dn_Shan <- gamm(shannon_estimate ~ s(day, k = 4, by = gavage) + gavage, 
+                     random = list(mouse_id = ~1),
+                     data = divnet_alpha_diversity_df)
+summary(gamm_dn_Shan$gam)
+
+
+### Simpson diversity (DivNet)
+gamm_dn_Simp <- gamm(simpson_estimate ~ s(day, k = 4, by = gavage) + gavage, 
+                     random = list(mouse_id = ~1),
+                     data = divnet_alpha_diversity_df)
+summary(gamm_dn_Simp$gam)
 
 
 ######################################################################
@@ -729,7 +776,8 @@ gamm_model <- gamm(abundance ~ s(day, k = 4, by = gavage) + gavage,
                    random = list(mouse_id = ~1),
                    data = df_taxon)
 summary(gamm_model$gam)
-
+gam.check(gamm_model$gam) # check residuals
+mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth terms)
 
 taxon_name <- "Faecalibacterium_prausnitzii"
 df_taxon <- df_long %>% filter(taxon == taxon_name)
@@ -737,6 +785,8 @@ gamm_model <- gamm(abundance ~ s(day, k = 4, by = gavage) + gavage,
                    random = list(mouse_id = ~1),
                    data = df_taxon)
 summary(gamm_model$gam)
+gam.check(gamm_model$gam) # check residuals
+mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth terms)
 
 
 ### fit model to all features
@@ -789,9 +839,6 @@ fit_gamm_taxon <- function(df, taxon_name) {
 
 taxa_list <- unique(df_long$taxon) # list of all taxa
 gamm_results <- map(taxa_list, ~ fit_gamm_taxon(df_long, .x)) 
-
-gam.check(gamm_model$gam) # check residuals
-mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth terms)
 
 # combine parametric coefficients (gavage) into a data.frame
 param_results <- purrr::map_df(gamm_results, "param") 
@@ -873,7 +920,7 @@ linda_inter_df <- linda_inter_df %>%
 #####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - GLMM-BASED - GLMMTMB   #####
 ##########################################################################
 
-# negaive binomial and zero-inflated, negative binomial model
+# negative binomial and zero-inflated, negative binomial model
 
 # filter low prevalence taxa (present in less than 10% of samples)
 feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
@@ -904,6 +951,7 @@ model_nb <- glmmTMB(count ~ gavage * day + (1 | mouse_id),
                     family = nbinom2, 
                     data = df_count_taxon)
 summary(model_nb)$coefficients$cond # Wald z-tests
+testUniformity(simulateResiduals(fittedModel = model_nb, n = 1000)) # check residuals
 
 
 ### fit model with one feature - zero-inflated, negative binomial model
@@ -911,10 +959,11 @@ taxon_name <- "Bacteroides_intestinalis"
 df_count_taxon <- df_count_long %>% filter(taxon == taxon_name)
 
 model_zinb <- glmmTMB(count ~ gavage * day + (1 | mouse_id),
-                      ziformula = ~ 1, # constant probability of zero inflation
+                      ziformula = ~ gavage, # probability of zero inflation dependent on gavage group
                       family = nbinom2,
                       data = df_count_taxon)
 summary(model_zinb)$coefficients$cond # Wald z-tests
+testUniformity(simulateResiduals(fittedModel = model_zinb, n = 1000)) # check residuals
 
 
 ### fit (zero-inflated) negative binomial model to all features
@@ -927,7 +976,7 @@ fit_glmmTMB_taxon <- function(df, taxon_name, zero_inflated = FALSE) {
     # choose model type
     if (zero_inflated) {
       fit <- glmmTMB(count ~ gavage * day + (1 | mouse_id),
-                     ziformula = ~1, 
+                     ziformula = ~ gavage, 
                      family = nbinom2, 
                      data = df_taxon)
     } else {
@@ -986,7 +1035,7 @@ df_zero_inflated_taxa <- df_count_long %>%
 
 zero_inflated_taxa <- unique(df_zero_inflated_taxa$taxon) # list of all zero-inflated taxa 
 
-glmmTMB_zinb_results_list <- map(zero_inflated_taxa, ~ fit_glmmTMB_taxon(df_count_long, .x))
+glmmTMB_zinb_results_list <- map(zero_inflated_taxa, ~ fit_glmmTMB_taxon(df_count_long, .x, zero_inflated = TRUE))
 
 # combine results into a data.frame
 glmmTMB_zinb_results <- purrr::map_df(glmmTMB_zinb_results_list, "param") 
