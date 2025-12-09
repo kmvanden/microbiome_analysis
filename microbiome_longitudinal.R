@@ -301,21 +301,24 @@ summary(gamm_Chao$gam)
 ### richness (breakaway)
 gamm_b_Obs <- gamm(estimate ~ s(day, k = 4, by = gavage) + gavage, 
                    random = list(mouse_id = ~1),
-                   data = breakaway_richness_df)
+                   data = breakaway_richness_df,
+                   weights = 1 / se^2) # inverse-variance weighting
 summary(gamm_b_Obs$gam)
 
 
 ### Shannon diversity (DivNet)
 gamm_dn_Shan <- gamm(shannon_estimate ~ s(day, k = 4, by = gavage) + gavage, 
                      random = list(mouse_id = ~1),
-                     data = divnet_alpha_diversity_df)
+                     data = divnet_alpha_diversity_df,
+                     weights = 1 / (shannon_error^2)) # inverse-variance weighting
 summary(gamm_dn_Shan$gam)
 
 
 ### Simpson diversity (DivNet)
 gamm_dn_Simp <- gamm(simpson_estimate ~ s(day, k = 4, by = gavage) + gavage, 
                      random = list(mouse_id = ~1),
-                     data = divnet_alpha_diversity_df)
+                     data = divnet_alpha_diversity_df,
+                     weights = 1 / (simpson_error^2)) # inverse-variance weighting
 summary(gamm_dn_Simp$gam)
 
 
