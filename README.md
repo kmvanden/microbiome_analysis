@@ -11,29 +11,32 @@
 
 ## :moneybag::balance_scale: Alpha Diversity
 Alpha diversity measures the diversity within a single sample. Traditional alpha diversity metrics come from classical ecology and include: 
-  - **Richness**: total number of unique taxa
-  - **Shannon index**: richness and evenness (how many taxa are present and how evenly their abundances are distributed; penalizes dominance)
-  - **Simpson index**: the probability that two individuals randomly selected from a sample belong to the same species, thus emphasizing dominant taxa
+  - **Richness**: measures the total number of unique taxa.
+  - **Shannon index**: measures how hard it is to predict the identity of an individual randomly drawn from the community. Increasing richness and/or increasing evenness increases the uncertainty and thus the Shannon index. Sensitive to rare taxa sicne they increase diversity.
+  - **Simpson index**: measures the probability that two randomly drawn individuals are from different taxa. Increasing evenness decreases the Simpson index. Abundant taxa have a large effect on the measure, whereas rare taxa contribute very little.
 
-These traditional diversity metrics assume an equal sampling effort, but micobiome data typically have uneven sequencing depths.
+Traditional diversity metrics assume an equal sampling effort (i.e., equal sequencing depth), but micobiome data typically have uneven sequencing depths.
+  - **Rarefaction**: subsampling of each sample to the same sequencing depth (typically that of the shallowest sample) removes differences in sequencing depth (i.e., deeper samples won’t appear more diverse).
+  - The use of rarefaction is disputed because it discards data (statistical power is decreased by shallower samples), introduces random variation (the subsampling is stochastic), can bias diversity estimation (especially for rare taxa) and does not correct for unobserved species.
+  - Observed richness is very sensitive to sequencing depth and thus requires sampling depth to be normalized. Shannon diversity is moderately sensitive to sequencing depth and Simpson diveristy is barely effected by sequencing depth.
 
-**Rarefaction**: subsampling of each sample to the same sequencing depth (typically that of the shallowest sample).
-  - Rarefaction removes differences in library size (sequencing depth), with the goal of ensuring fair comparison between the samples (i.e., deeper samples won’t appear more diverse).
-  - However, the use of rarefaction is disputed, because it discards data (statistical power is decreased by shallower samples), introduces random variation (the subsampling is stochastic), can bias diversity estimation (especially for rare taxa) and does not correct for unobserved species.
+To avoid rarefaction and to better model the underlying microbial diversity, newer methods infer latent (unseen) diversity using statistical methods.
+  - **Chao1**: estimates total species richness. Chao1 infers the number of unseen species by using the observed counts of singletons and doubletons and the assumption that individuals are randomly and independently sampled from the community.
+  - **Breakaway**: estimates true species richness by fitting a rational function model (a ratio of polynomials) to the frequency count data (frequency of the frequencies) using weighted nonlinear least squares to model the unobserved portion of the community (unseen taxa). Weights are assigned based on the estimated variance of each frequency count (i.e., high variance points like singletons receive less weight).
+  - **DivNet**: estimates Shannon and Simpson diversity by modeling latent relative abundances (true but unobserved proportions) of the taxa in the community. It assumes that the additive log-ratio (alr)-transformed latent proportions follow a multivariate normal distribution and that the observed counts result from a multinomial sampling process of the inverse alr-transformed latent proportions. DivNet uses maximum likelihood estimation to jointly estimate the mean vector (μ) and the covariance matrix (Σ) that define the latent distribution, and from that, derives the diversity estimates (the latent proportions most likely to have produced the observed counts) and their associated uncertainty.
 
-Alpha diversity values often exhibit heteroscedasticity (unequal variances across groups) and non-normal distributions. As a result, non-parametric statistical tests are typically used. These tests are based on ranked data rather than raw values, and do not assume normality. However, they do assume that the distributions being compared have a similar shape (e.g., similar variance and skewness).
+Alpha diversity values often exhibit heteroscedasticity (unequal variances across groups) and non-normal distributions. As a result, non-parametric statistical tests are typically used. These tests do not assume normality and are based on ranked data rather than raw values.
   - **Wilcoxon Rank-Sum test** for comparing two groups.
   - **Kruskal-Wallis test** for comparing more than two groups.
 
-To avoid rarefaction and to better model the underlying microbial diversity, newer methods infer latent (unseen) diversity using statistical methods.
-
-**Chao1**: estimates total species richness. Chao1 infers the number of unseen species by using the observed counts of singletons and doubletons and the assumption that individuals are randomly and independently sampled from the community.
-
-**Breakaway**: estimates true species richness by fitting a rational function model (a ratio of polynomials) to the frequency count data (frequency of the frequencies) using weighted nonlinear least squares to model the unobserved portion of the community (unseen taxa). Weights are assigned based on the estimated variance of each frequency count (i.e., high variance points like singletons receive less weight).
-
-**DivNet**: estimates Shannon and Simpson diversity by modeling latent relative abundances (true but unobserved proportions) of the taxa in the community. It assumes that the additive log-ratio (alr)-transformed latent proportions follow a multivariate normal distribution and that the observed counts result from a multinomial sampling process of the inverse alr-transformed latent proportions. DivNet uses maximum likelihood estimation to jointly estimate the mean vector (μ) and the covariance matrix (Σ) that define the latent distribution, and from that, derives the diversity estimates (the latent proportions most likely to have produced the observed counts) and their associated uncertainty.
-
 **Betta**: a regression framework that performs statistical testing on alpha diversity estimates produced by breakaway or DivNet, while explicitly accounting for sampling variability in those estimates. It uses the alpha diversity values and their standard errors to fit a linear model, where the data points are weighed with respect to the precision (inverse variance) of each estimate. This allows for hypothesis testing or covariate modeling that properly incorporate uncertainty due to unobserved taxa, sequencing depth, and variability in taxon detection.
+
+Betta and standard Wilcoxon and Kruskal-Wallis tests cannot account for the correlation of repeated measures (i.e., they assume that observations are independent).
+  - **Linear mixed-effects models (LMM)**: model both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). Assumes that data can be transformed to be approximately normal (e.g., using a CLR transformation).
+    - Estimated marginal means can be used to compute the mean response for each factor level, adjusted for other predictors in the model.
+    - Breakaway and DivNet diversity estimates should be weighted by inverse variance to incorporate the computed uncertainty. 
+  - **Generalized additive mixed models (GAMM)**: model both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). They allow non-linear relationships between predictors and the response via smooth functions (splines). GAMMs can overfit if there are few time points per subject, so the number of basis functions/knots (k) for the spline should be chosen in accordance with the number of time points and the estimated degrees of freedom (edf) for each smooth term should be checked.
+    - Breakaway and DivNet diversity estimates should be weighted by inverse variance to incorporate the computed uncertainty. 
 
 ## :dotted_line_face::corn: Beta-Diversity
 Beta diversity measures between-sample differences in whole microbiome communities (it asks are samples from different groups more different than samples from within a given group).
