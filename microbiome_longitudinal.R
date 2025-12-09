@@ -58,13 +58,10 @@ ps <- phyloseq(feat_otu, sampledata)
 # rarefy the phyloseq object (for Observed richness)
 sample_sums(ps) %>% summary() # check sequencing depth (rarefaction depth based on sequencing depth)
 ps_rarefied <- rarefy_even_depth(ps, rngseed = 1234, sample.size = min(sample_sums(ps)), verbose = FALSE)
-
-# relative abundance for Shannon and Simpson
-ps_rel <- transform_sample_counts(ps, function(x) x / sum(x)) 
-
+ps_rel
 
 ### calculate traditional alpha diversity metrics using phyloseq
-alpha_phyloseq <- estimate_richness(ps_rel, measures = c("Shannon", "Simpson"))
+alpha_phyloseq <- estimate_richness(ps, measures = c("Shannon", "Simpson"))
 chao_df <- estimate_richness(ps, measures = "Chao1")
 observed_df <- estimate_richness(ps_rarefied, measures = "Observed")
 alpha_phyloseq$Chao1 <- chao_df$Chao1 # add Chao1 to alpha_phyloseq
