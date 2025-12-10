@@ -21,6 +21,7 @@ library(pheatmap)
 library(grid)
 library(colorspace)
 library(Maaslin2)
+library(corncob)
 library(compositions)
 library(mgcv)
 library(LinDA)
@@ -733,6 +734,97 @@ ggplot(pca_ait_df, aes(x = PC1, y = PC2)) +
   xlab(paste0("PC1 (", ait_var_explained[1], "% variance)")) +
   ylab(paste0("PC2 (", ait_var_explained[2], "% variance)")) +
   ggtitle("PCA of CLR-transformed data (aitchison)") + theme_minimal()
+
+
+########################################################################################################################
+#####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - MICROBIOME MULTIVARIABLE ASSOCIATION WITH LINEAR MODELS (MAASLIN2)   #####
+########################################################################################################################
+
+# filter low prevalence taxa (present in less than 10% of samples)
+feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
+
+feat_t <- t(feat_filtered) # transpose feature table
+all(rownames(feat_t) == meta$sample_id)  # check that sample ids match
+
+meta$gavage <- factor(meta$gavage, levels = c("G_1DMD", "G_4DMD", "G_4W7C", "G_4WMD")) # gavage as factor
+
+# create interaction columns
+X <- model.matrix(~ gavage * day, data = meta) # design matrix
+int_cols <- X[, grep(":", colnames(X)), drop = FALSE] # interaction terms
+colnames(int_cols) <- gsub(":", ".", colnames(int_cols)) # rename column names
+meta <- cbind(meta, int_cols) # add interaction columns to metadata
+
+# run MaAsLin2
+mas_long_inter <- Maaslin2(input_data = feat_t,
+                           input_metadata = meta,
+                           output = "maaslin2_longitudinal",
+                           fixed_effects = c("gavage", "day", colnames(int_cols)),
+                           random_effects = "mouse_id",
+                           normalization = "CLR",
+                           transform = "NONE",
+                           analysis_method = "LM")
+
+maaslin2_res <- read.table("maaslin2_longitudinal/all_results.tsv", header = TRUE)
+maaslin2_res <- maaslin2_res %>%
+  filter(qval < 0.05) %>%
+  arrange(pval)
+
+
+###################################################################################################################################
+#####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - COUNT REGRESSION FOR CORRELATED OBSERVATIONS WITH THE BETA-BINOMIAL (CORNCOB)   #####
+###################################################################################################################################
+
+# filter low prevalence taxa (present in less than 10% of samples)
+feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
+
+# format feature table and metadata
+feat_otu <- as.matrix(feat_filtered) # convert feature table to matrix
+feat_otu <- otu_table(feat_otu, taxa_are_rows = TRUE)  # convert to otu_table
+
+all(colnames(feat_otu) == rownames(meta)) # ensure sample names are the same
+sampledata <- sample_data(meta) # convert to sample_data
+
+# create a phyloseq object
+ps <- phyloseq(feat_otu, sampledata)
+
+# run corncob
+corncob_res <- differentialTest(formula = ~ gavage * day,
+                                phi.formula = ~ 1,
+                                formula_null = ~ gavage + day,
+                                phi.formula_null = ~ 1,
+                                data = ps,
+                                test = "LRT",
+                                random = ~ mouse_id,
+                                fdr_cutoff = 0.05)
+
+
+taxa_names <- rownames(feat_filtered) # get taxa names
+# iterate function over all significant models and bind data.frames together
+corncob_coef_df <- map_dfr(seq_along(corncob_res$all_models), function(i) {
+  model <- corncob_res$all_models[[i]] # get i-th model
+  taxa_name <- taxa_names[i] # get taxa corresponding to i-th model
+  
+  # extract coeeficients matrix from model
+  coefs <- model$coefficients
+  
+  # keep only mu rows (abundance)
+  mu_coefs <- coefs[grep("^mu\\.", rownames(coefs)), , drop = FALSE]
+  
+  # convert to data.frame and remove mu. prefix
+  df <- as.data.frame(mu_coefs) %>%
+    rownames_to_column(var = "term") %>%
+    mutate(term = gsub("^mu\\.", "", term),
+           taxa = taxa_name)
+  
+  return(df)
+})
+
+# calculate adjusted p-values and filter
+corncob_coef_df <- corncob_coef_df %>%
+  mutate(p_adj = p.adjust(`Pr(>|t|)`, method = "BH")) %>%
+  filter(p_adj < 0.05) %>%
+  arrange(desc(Estimate)) %>%
+  filter(term != "(Intercept)")
 
 
 #####################################################################################################
