@@ -861,7 +861,7 @@ df_long <- feat_long %>%
 df_long$gavage <- as.factor(df_long$gavage)
 
 
-# fit model with one feature
+### fit model with one feature
 taxon_name <- "Bacteroides_intestinalis"
 df_taxon <- df_long %>% filter(taxon == taxon_name)
 gamm_model <- gamm(abundance ~ s(day, k = 4, by = gavage) + gavage,
@@ -879,6 +879,26 @@ gamm_model <- gamm(abundance ~ s(day, k = 4, by = gavage) + gavage,
 summary(gamm_model$gam)
 gam.check(gamm_model$gam) # check residuals
 mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth terms)
+
+
+### plot smooths for one feature
+# create data.frame of smooths for all gavage x day combinatons
+smooth_df <- expand.grid(day = seq(min(df_taxon$day), max(df_taxon$day), length = 200),
+                         gavage = levels(df_taxon$gavage))
+
+# predict smooths
+pred <- predict(gamm_model$gam, newdata = smooth_df, se.fit = TRUE, type = "response")
+
+# add predictions to smooth_df
+smooth_df$fit   = pred$fit
+smooth_df$upper = pred$fit + 2 * pred$se.fit
+smooth_df$lower = pred$fit - 2 * pred$se.fit
+
+ggplot() + theme_minimal() +
+  geom_point(data = df_taxon, aes(day, abundance, color = gavage), alpha = 0.4) +
+  geom_line(data = smooth_df, aes(day, fit, color = gavage), linewidth = 1) +
+  geom_ribbon(data = smooth_df, aes(x = day, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+  labs(title = paste0("GAMM Smooths for ", taxon_name), y = "CLR abundance", x = "Day") # + facet_wrap(~gavage) # include for faceted plots
 
 
 ### fit model to all features
