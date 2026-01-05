@@ -1,5 +1,5 @@
 # Microbiome Analysis
-## :microbe::chart_with_upwards_trend: Why Microbiome Data Are Statistically Challenging
+## Why Microbiome Data Are Statistically Challenging
 **Compositionality**: microbiome data represent relative abundances, not absolute counts, which means that the data are constrained. Since all values are non-negative and sum to a constraint (i.e., sum to 1), the data exist in a simplex, not in standard Euclidean space. Furthermore, since the total abundance is fixed, spurious correlations and dependencies are created between taxa (i.e., an increase in the proportion of one taxa must be accompanied by decreases in the others, even if their absolute abundances did not change). Many statistical models assume that variables are independent and unconstrained in Euclidean space, and microbiome data violate these assumptions.
   - **Solution**: Log-ratio transformations move compositional data from the simplex into a standard Euclidean (unconstrained) space suitable for standard statistics. Alternatively, some methods model compositionality explicitly, like ALDEx2, which uses CLR transformation (a log-ratio transformation based on the geometric mean of all taxa in a given sample) and Monte Carlo sampling from a Dirichlet-multinomial distribution.
 
@@ -9,7 +9,7 @@
 **Overdispersion and zero-inflation**: in microbiome data, most taxa are absent (zero counts) in most samples, due to both rare taxa being below detection thresholds (rounded or sampling zeros) and due to true biological absence of certain taxa (true or structural zeros). Sparsity is a major contributor to the overdispersion observed in microbiome count data: a species may be absent in most samples, but have very large values in other samples when it is present. Overdispersion violates the assumptions made by models used with count data, like the Poisson distribution, which assume that the variance does not exceed the mean. Additionally, the sparsity of microbiome data also results in zero-inflation (i.e., more zeros than expected under typical count distributions), due to the presence of both sampling and structural zeros.
   - **Solution**: negative binomial models (e.g., in DESeq2) have a dispersion parameter that allows them to model variance independently from the mean and to therefore capture the overdispersion present in microbiome data. Zero-inflation can also be controlled for by using zero-inflated negative binomial (ZINB) models, which explicitly model the zero counts as separate processes (a structural zero process and a negative binomial count process). Additionally, feature filtering before analysis (e.g., removing features found in fewer than 10% of the samples) can help to reduce the impact of zero-inflation. 
 
-## :moneybag::balance_scale: Alpha Diversity
+## Alpha Diversity
 Alpha diversity measures the diversity within a single sample. Traditional alpha diversity metrics come from classical ecology and include: 
   - **Richness**: measures the total number of unique taxa.
   - **Shannon index**: measures how hard it is to predict the identity of an individual randomly drawn from the community. Increasing richness and/or increasing evenness increases the uncertainty and thus the Shannon index. Sensitive to rare taxa sicne they increase diversity.
@@ -38,7 +38,7 @@ Betta and standard Wilcoxon and Kruskal-Wallis tests cannot account for the corr
   - **Generalized additive mixed models (GAMM)**: model both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). They allow non-linear relationships between predictors and the response via smooth functions (splines). GAMMs can overfit if there are few time points per subject, so the number of basis functions/knots (k) for the spline should be chosen in accordance with the number of time points and the estimated degrees of freedom (edf) for each smooth term should be checked.
     - Breakaway and DivNet diversity estimates should be weighted by inverse variance to incorporate the computed uncertainty. 
 
-## :dotted_line_face::corn: Beta-Diversity
+## Beta-Diversity
 Beta diversity measures between-sample differences in whole microbiome communities (it asks are samples from different groups more different than samples from within a given group).
 
 **Bray-Curtis distance**: measures the compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. It is computed as the weighted sum of absolute differences, where weights are the abundances, thus the metric is dominated by abundant taxa.
@@ -87,7 +87,7 @@ Beta diversity measures between-sample differences in whole microbiome communiti
   - Assumes equal dispersion (variance) across groups. If this assumption is violated (e.g., one group is more dispersed), it can yield false positives even when group centroids are not meaningfully different, thus equal dispersion should be verified (```betadisper```).
   - Repeated measurements should be handled by restricting permutations within a given subject (```strata = subject_id```) to prevent false positives arising from correlation (non-independence) among repeated measurements from the same subject. ```strata``` does not model correlation between the repeated measurements.
 
-## :octopus::cloud_with_snow: Differential Abundance Analysis
+## Differential Abundance Analysis
 The identification of individual microbial taxa whose relative abundances differ significantly between groups. 
 
 **ALDEx2 (ANOVA-Like Differential Expression)**: assumes raw counts are the result of a random sampling process from an underlying set of true feature abundances that can be modeled using a multinomial distribution (i.e., the observed counts are drawn based on the true (but unknown) proportions of each feature). Since the true feature abundances are unknown, ALDEx2 uses a Dirichlet distribution to model the uncertainty about what the true proportions could be given the observed counts. The Dirichlet distribution represents a probability distribution over possible parameter values of the multinomial distributions (i.e., over plausible feature proportions). 
@@ -134,7 +134,7 @@ The parametric coefficients (covariates not included in the smooth terms) and sm
 
 <!-- Taxa with low counts but large corrected log-fold changes may be significant in ANCOM-BC, even if they are not detected by methods like DESeq2, corncob, or ALDEx2. ANCOM-BC assumes a linear model on bias-corrected log counts, and uses robust SEs, so it can detect large log-fold changes even in low-abundance taxa, as long as the standard error is relatively small. Is more sensitive than conservative methods like ALDEx2 and does not downweight sparse or zero-heavy taxa the way negative binomial models might. ANCOM-BC does not model zero inflation or overdispersion explicitly, so it might treat zero-heavy, low-abundance taxa as stable if the log-abundances appear consistent post-bias-correction, even if this is just random. -->
 
-## :unicorn::smiling_imp: sPLS-DA and DIABLO
+## sPLS-DA and DIABLO
 **sPLS-DA (sparse Partial Least Squares Discriminant Analysis)** is a supervised, multivariate method to reduce dimensionality, classify samples based on a categorical outcome and select the most discriminative features. The method works well with data that is high-dimensional and/or multicollinear.
   - Dimensionality is reduced by projecting the data onto a few latent components
 and through feature selection (only the most informative variables per
@@ -153,12 +153,12 @@ Soft-thresholding is applied to retain only the top ```keepX``` features per com
 
 Once convergence is reached for a given component (i.e., when the features weights stabilize below a set tolerance or a set number of iterations is reached), the explained variance is removed, and a new orthogonal component is estimated to capture the remaining variance that was not explained by the earlier components.
 
-## :mag::polar_bear: Multi-Omics Factor Analysis v2 (MOFA2)
+## Multi-Omics Factor Analysis v2 (MOFA2)
 MOFA2 is an unsupervised, probabilistic, multivariate method for integrating multiple omics datasets (views) measured on the same (or partially overlapping) set of samples. MOFA2 constructs latent factors that capture the most important sources of variation within and across data views using Bayesian inference. The latent factors can be shared across views (capturing covariation between omics datasets) or view-specific (capturing variation unique to one omics dataset), and are modeled as linear combinations of features. 
 
 MOFA2 initializes a probabilistic model structure that includes latent factors, feature weights (loadings) per view and noise and likelihood parameters (Gaussian for continuous data). Variational inference (an iterative optimization algorithm) is used to approximate the posterior distribution of the parameters by optimizing the Evidence Lower BOund (ELBO), which balances fit to the data with model complexity via regularization from priors. Sparsity-inducing priors, such as Automatic Relevance Determination (ARD), which shrinks irrelevant weights and factor-view combinations toward zero, and spike-and-slab priors, which shrink irrelevant weights exactly to zero, promote feature selection and enhance interpretability of the latent factors. The parameters are iteratively updated until convergence or stopping criteria (e.g., maximum number of iterations) is reached. 
 
-## :spider_web::tumbler_glass: Network Construction and comparison for Microbiome data (NetCoMi)
+## Network Construction and comparison for Microbiome data (NetCoMi)
 Microbial association networks are graphs that model statistical associations (edges) between microbial taxa (nodes) based on abundance data. These associations can represent correlations (marginal relationships) or conditional dependencies (direct relationships). Edges can be weighted (indicating the strength of the association) and signed (where a positive sign suggests co-occurrence and negative sign suggests co-exclusion).
 
 Centrality measures are used to identify important nodes (hubs) within the network.
@@ -196,7 +196,7 @@ SPIEC-EASI selects the optimal sparsity level using the Stability Approach to Re
 
 In the resulting precision matrix, non-zero entries indicate conditional dependencies between taxa (i.e., the two taxa are directly associated after accounting for all other taxa in the network).
 
-## :basket::basket: Enterotyping
+## Enterotyping
 The unsupervised categorization of microbiome samples into clusters (enterotypes) based on community composition (i.e., the relative abundance of taxa that dominate different groups). 
 
 **Dirichlet-Multinomial Mixture (DMM) model**: is one of the most widely used statistical models for enterotyping.
