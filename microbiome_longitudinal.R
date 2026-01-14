@@ -59,7 +59,7 @@ ps <- phyloseq(feat_otu, sampledata)
 # rarefy the phyloseq object (for Observed richness)
 sample_sums(ps) %>% summary() # check sequencing depth (rarefaction depth based on sequencing depth)
 ps_rarefied <- rarefy_even_depth(ps, rngseed = 1234, sample.size = min(sample_sums(ps)), verbose = FALSE)
-ps_rel
+
 
 ### calculate traditional alpha diversity metrics using phyloseq
 alpha_phyloseq <- estimate_richness(ps, measures = c("Shannon", "Simpson"))
@@ -321,6 +321,54 @@ gamm_dn_Simp <- gamm(simpson_estimate ~ s(day, k = 4, by = gavage) + gavage,
                      data = divnet_alpha_diversity_df,
                      weights = 1 / (simpson_error^2)) # inverse-variance weighting
 summary(gamm_dn_Simp$gam)
+
+
+### plot smooths for Shannon
+# create data.frame of smooths for all gavage x day combinations
+smooth_df <- expand.grid(day = seq(min(alpha_phyloseq$day), max(alpha_phyloseq$day),
+                                   length = 200), gavage = levels(alpha_phyloseq$gavage))
+
+# predict smooths
+pred <- predict(gamm_Shan$gam, newdata = smooth_df, se.fit = TRUE, type = "response")
+
+# add predictions to smooth_df
+smooth_df$fit   <- pred$fit
+smooth_df$upper <- pred$fit + 2 * pred$se.fit
+smooth_df$lower <- pred$fit - 2 * pred$se.fit
+
+ggplot() + theme_minimal() +
+  geom_point(data = alpha_phyloseq, aes(day, Shannon, color = gavage), alpha = 0.4) +
+  geom_line(data = smooth_df, aes(day, fit, color = gavage), linewidth = 1) +
+  geom_ribbon(data = smooth_df, aes(day, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+  labs(title = "GAMM Smooths for Shannon Diversity", y = "Shannon diversity", x = "Day")
+
+
+### function to plot smooths for alpha diversity metrics
+plot_alpha_gamm <- function(data, gamm_obj, alpha_div_metric) {
+  
+  # create data.frame of smooths for all gavage x day combinations
+  smooth_df <- expand.grid(day = seq(min(data$day), max(data$day), length = 200),
+                           gavage = levels(data$gavage))
+  
+  # predict smooths
+  pred <- predict(gamm_obj$gam, newdata = smooth_df, se.fit = TRUE, type = "response")
+  
+  # add predictions to smooth_df
+  smooth_df$fit   <- pred$fit
+  smooth_df$upper <- pred$fit + 2 * pred$se.fit
+  smooth_df$lower <- pred$fit - 2 * pred$se.fit
+  
+  ggplot() + theme_minimal() +
+    geom_point(data = data, aes(x = day, y = .data[[alpha_div_metric]], color = gavage), alpha = 0.4) +
+    geom_line(data = smooth_df, aes(day, fit, color = gavage), linewidth = 1) +
+    geom_ribbon(data = smooth_df, aes(day, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+    labs(title = paste0("GAMM Smooths for ", alpha_div_metric), y = alpha_div_metric, x = "Day")
+}
+
+plot_alpha_gamm(data = alpha_phyloseq, gamm_obj = gamm_Obs, alpha_div_metric = "Observed")
+plot_alpha_gamm(data = alpha_phyloseq, gamm_obj = gamm_Shan, alpha_div_metric = "Shannon")
+plot_alpha_gamm(data = alpha_phyloseq, gamm_obj = gamm_Simp, alpha_div_metric = "Simpson")
+plot_alpha_gamm(data = alpha_phyloseq, gamm_obj = gamm_Chao, alpha_div_metric = "Chao1")
 
 
 ######################################################################
@@ -882,7 +930,7 @@ mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth ter
 
 
 ### plot smooths for one feature
-# create data.frame of smooths for all gavage x day combinatons
+# create data.frame of smooths for all gavage x day combinations
 smooth_df <- expand.grid(day = seq(min(df_taxon$day), max(df_taxon$day), length = 200),
                          gavage = levels(df_taxon$gavage))
 
