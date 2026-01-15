@@ -276,6 +276,8 @@ gamm_Obs <- gamm(Observed ~ s(day, k = 4, by = gavage) + gavage,
                  random = list(mouse_id = ~1),
                  data = alpha_phyloseq)
 summary(gamm_Obs$gam)
+gam.check(gamm_Obs$gam) # check residuals
+mgcv::concurvity(gamm_Obs$gam) # check concurvity
 
 
 ### Shannon diversity
@@ -283,6 +285,8 @@ gamm_Shan <- gamm(Shannon ~ s(day, k = 4, by = gavage) + gavage,
                   random = list(mouse_id = ~1),
                   data = alpha_phyloseq)
 summary(gamm_Shan$gam)
+gam.check(gamm_Shan$gam) # check residuals
+mgcv::concurvity(gamm_Shan$gam) # check concurvity
 
 
 ### Simpson diversity
@@ -290,6 +294,8 @@ gamm_Simp <- gamm(Simpson ~ s(day, k = 4, by = gavage) + gavage,
                   random = list(mouse_id = ~1),
                   data = alpha_phyloseq)
 summary(gamm_Simp$gam)
+gam.check(gamm_Simp$gam) # check residuals
+mgcv::concurvity(gamm_Simp$gam) # check concurvity
 
 
 ### Chao1 diversity
@@ -297,6 +303,8 @@ gamm_Chao <- gamm(Chao1 ~ s(day, k = 4, by = gavage) + gavage,
                   random = list(mouse_id = ~1),
                   data = alpha_phyloseq)
 summary(gamm_Chao$gam)
+gam.check(gamm_Chao$gam) # check residuals
+mgcv::concurvity(gamm_Chao$gam) # check concurvity
 
 
 ### richness (breakaway)
@@ -305,6 +313,8 @@ gamm_b_Obs <- gamm(estimate ~ s(day, k = 4, by = gavage) + gavage,
                    data = breakaway_richness_df,
                    weights = 1 / se^2) # inverse-variance weighting
 summary(gamm_b_Obs$gam)
+gam.check(gamm_b_Obs$gam) # check residuals
+mgcv::concurvity(gamm_b_Obs$gam) # check concurvity
 
 
 ### Shannon diversity (DivNet)
@@ -313,6 +323,8 @@ gamm_dn_Shan <- gamm(shannon_estimate ~ s(day, k = 4, by = gavage) + gavage,
                      data = divnet_alpha_diversity_df,
                      weights = 1 / (shannon_error^2)) # inverse-variance weighting
 summary(gamm_dn_Shan$gam)
+gam.check(gamm_dn_Shan$gam) # check residuals
+mgcv::concurvity(gamm_dn_Shan$gam) # check concurvity
 
 
 ### Simpson diversity (DivNet)
@@ -321,6 +333,8 @@ gamm_dn_Simp <- gamm(simpson_estimate ~ s(day, k = 4, by = gavage) + gavage,
                      data = divnet_alpha_diversity_df,
                      weights = 1 / (simpson_error^2)) # inverse-variance weighting
 summary(gamm_dn_Simp$gam)
+gam.check(gamm_dn_Simp$gam) # check residuals
+mgcv::concurvity(gamm_dn_Simp$gam) # check concurvity
 
 
 ### plot smooths for Shannon
