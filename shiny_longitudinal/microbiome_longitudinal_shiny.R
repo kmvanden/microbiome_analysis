@@ -115,7 +115,6 @@ alpha_diversity <- list(metrics = alpha_diversity_metrics,
 saveRDS(alpha_diversity, "microbiome_analysis/shiny_longitudinal/alpha_diversity.rds")
 
 
-
 ###############################################################
 #####     BETA DIVERSITY PRECOMPUTATION FOR SHINY APP     #####
 ###############################################################
@@ -125,14 +124,12 @@ ps_filt <- filter_taxa(ps, function(x) sum(x > 0) >= 0.1 * nsamples(ps), prune =
 
 ps_rel <- transform_sample_counts(ps_filt, function(x) x / sum(x)) # relative abundance for bray-curtis and canberra
 ps_pa <- transform_sample_counts(ps_filt, function(x) as.numeric(x > 0)) # presence/absence for jaccard
-ps_log <- transform_sample_counts(ps_filt, function(x) log1p(x))  # log-transformation for euclidean
 ps_clr <- transform(ps_filt, "clr")  # clr transformation (microbiome package adds pseudocount) for aitchison
 
 
 ### distance matrices 
 distances <- list(bray_curtis = distance(ps_rel, method = "bray"), # bray-curtis
                   jaccard = distance(ps_pa, method = "jaccard", binary = TRUE), # jaccard
-                  euclidean = distance(ps_log, method = "euclidean"), # euclidean
                   canberra = distance(ps_rel, method = "canberra"), # canberra
                   aitchison = distance(ps_clr, method = "euclidean"))  # aitchison (euclidean in clr space)
 
@@ -140,9 +137,31 @@ distances <- list(bray_curtis = distance(ps_rel, method = "bray"), # bray-curtis
 ### PCoA ordination
 ordination <- list(bray_curtis = ordinate(ps_rel, method = "PCoA", distance = distances$bray_curtis), # bray-curtis
                    jaccard = ordinate(ps_pa, method = "PCoA", distance = distances$jaccard), # jaccard
-                   euclidean = ordinate(ps_log, method = "PCoA", distance = distances$euclidean), # euclidean
                    canberra = ordinate(ps_rel, method = "PCoA", distance = distances$canberra), # canberra
                    aitchison = ordinate(ps_clr, method = "PCoA", distance = distances$aitchison)) # aitchison
+
+
+### NMDS ordination (non-Euclidean distances)
+set.seed(1234) # NMDS is stochastic
+nmds_ordination <- list(bray_curtis = ordinate(ps_rel, method = "NMDS", distance = distances$bray_curtis), # bray-curtis
+                        jaccard = ordinate(ps_pa, method = "NMDS", distance = distances$jaccard), # jaccard
+                        canberra = ordinate(ps_rel, method = "NMDS", distance = distances$canberra)) # canberra
+
+
+### PCA ordination (Euclidean distances)
+pca_ordination <- list(
+  aitchison = {
+    clr_otu <- t(otu_table(ps_clr)) # extract CLR-transformed data and transpose
+    prcomp(clr_otu, center = TRUE, scale. = FALSE) # run PCA
+    }
+)
+
+### constrained ordination (db-RDA | RDA)
+# capscale (distance-based RDA) used on non-Euclidean distances
+con_ordination <- list(bray_curtis = capscale(distances$bray_curtis ~ gavage + day, data = meta), # bray-curtis
+                       jaccard = capscale(distances$jaccard ~ gavage + day, data = meta), # jaccard
+                       canberra = capscale(distances$canberra ~ gavage + day, data = meta), # canberra
+                       aitchison = rda(t(otu_table(ps_clr)) ~ gavage + day, data = meta)) # aitchison
 
 
 ### overall PERMANOVA
@@ -231,6 +250,19 @@ betadisper_by_time <- function(dist_list, meta) {
 dispersion_time <- betadisper_by_time(distances, meta)
 
 
+### constrained ordination permutation tests
+perm_mouse <- how(blocks = meta$mouse_id, nperm = 999) # define permutation scheme
+
+anova_perm <- function(con_ord_list, perm) {
+  lapply(con_ord_list, function(c) {
+    list(overall = anova(c, permutations = perm),
+         terms = anova(c, by = "terms", permutations = perm),
+         axis = anova(c, by = "axis", permutations = perm))
+  })
+}
+anova_permutation <- anova_perm(con_ordination, perm_mouse)
+
+
 ### save beta-diversity outputs to avoid recalculation in the Shiny app
 beta_diversity <- list()
 
@@ -238,9 +270,15 @@ for (metric in names(distances)) {
   beta_diversity[[metric]] <- list(distance = distances[[metric]],
                                    permanova = list(overall = permanova_overall[[metric]],
                                                     by_time = permanova_time[[metric]]),
+                                   anova_perm = list(overall = anova_permutation[[metric]]$overall,
+                                                     terms = anova_permutation[[metric]]$terms,
+                                                     axis = anova_permutation[[metric]]$axis),
                                    dispersion = list(overall = dispersion_overall[[metric]],
                                                      by_time = dispersion_time[[metric]]),
-                                   ordination = list(pcoa = ordination[[metric]]))
+                                   ordination = list(pcoa = ordination[[metric]],
+                                                     nmds = if (metric %in% names(nmds_ordination)) nmds_ordination[[metric]] else NULL, # only calculated for non-Euclidean distances
+                                                     pca = if (metric %in% names(pca_ordination)) pca_ordination[[metric]] else NULL, # only calculated for Euclidean distances
+                                                     con_ord = con_ordination[[metric]]))
 }
 
 saveRDS(beta_diversity, "microbiome_analysis/shiny_longitudinal/beta_diversity.rds")

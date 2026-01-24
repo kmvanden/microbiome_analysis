@@ -124,10 +124,22 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                     conditionalPanel(condition = "input.diversity_type == 'beta'",
                                      tabsetPanel(tabPanel("PCoA Plot",
                                                           div(class = "tab-content-spacing",
-                                                          h4("Principal Coordinates Analysis Plot", 
+                                                          h4("Principal Coordinate Analysis Plot", 
                                                           actionButton("info_pcoa_plot", label = NULL, icon = icon("question-circle"), 
-                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                           plotOutput("pcoa_plot", height = 400))),
+                                                 tabPanel("NMDS Plot",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Non-metric Multidimensional Scaling Plot", 
+                                                          actionButton("info_nmds_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("nmds_plot", height = 400))),
+                                                 tabPanel("PCA Plot",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Principal Component Analysis Plot", 
+                                                          actionButton("info_pca_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("pca_plot", height = 400))),
                                                  tabPanel("Overall PERMANOVA",
                                                           div(class = "tab-content-spacing",
                                                           h4("Overall PERMANOVA", 
@@ -142,16 +154,30 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                           DTOutput("permanova_time"))),
                                                  tabPanel("Overall Dispersion", 
                                                           div(class = "tab-content-spacing",
-                                                              h4("Overall Dispersion", 
-                                                              actionButton("info_dispersion_overall", label = NULL, icon = icon("question-circle"), 
-                                                                           style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                              tableOutput("dispersion_overall"))),
+                                                          h4("Overall Dispersion", 
+                                                          actionButton("info_dispersion_overall", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          tableOutput("dispersion_overall"))),
                                                  tabPanel("Time-resolved Dispersion", 
                                                           div(class = "tab-content-spacing",
-                                                              h4("Time-resolved Dispersion", 
-                                                              actionButton("info_dispersion_time", label = NULL, icon = icon("question-circle"), 
-                                                                           style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                              tableOutput("dispersion_time")))))
+                                                          h4("Time-resolved Dispersion", 
+                                                          actionButton("info_dispersion_time", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          tableOutput("dispersion_time"))),
+                                                 tabPanel("Constrained Ordination Plot",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Constrained Ordination (dbRDA/RDA) Plot", 
+                                                          actionButton("info_con_ord_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("con_ord_plot", height = 400))),
+                                                 tabPanel("Constrained Ordination Permutation Tests",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Constrained Ordination Permutation Tests", 
+                                                          actionButton("info_con_ord_overall", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          wellPanel(h5("Overall Permutation Test"), tableOutput("con_ord_overall")),
+                                                          wellPanel(h5("Permutation Test by Term"), tableOutput("con_ord_terms")),
+                                                          wellPanel(h5("Permutation Test by Axis"), tableOutput("con_ord_axis"))))))
                   )
                 )
 )
@@ -545,9 +571,12 @@ server <- function(input, output, session) {
   observeEvent(input$info_pcoa_plot, {
     showModal(
       modalDialog(
-        title = "Principal coordinate analysis",
-        p("PCoA plots represent samples in a low-dimensional Euclidean space with the goal of preserving the pairwise distances or dissimilarities as faithfully as possible. 
-        On a PCoA plot, each axis represents the amount of variation in the distance matrix explained by that coordinate, making it interpretable in terms of explained variance."),
+        title = "Principal Coordinate Analysis Plot",
+        p("PCoA is an unconstrained ordination method that represents samples in a low-dimensional space while 
+          best preserving the pairwise distances or dissimilarities between samples."), 
+        p("Each axis (principal coordinate) represents the amount of variation in the distance matrix explained by that axis."),
+        p("PCoA is appropriate for both Euclidean and non-Euclidean distance metrics and is often the preferred 
+          ordination method when distances have a meaningful metric interpretation."),
         p(strong("Bray-Curtis distance:"), "Measures the compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
           It is computed as the weighted sum of absolute differences, where weights are the abundances, thus the metric is dominated by abundant taxa."),
         p(strong("Canberra distance:"), "Measures compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
@@ -555,23 +584,185 @@ server <- function(input, output, session) {
           (i.e., rare taxa contribute proportionally more than they would in Bray-Curtis)."),
         p(strong("Jaccard distance:"), "Measures the dissimilarity between two samples based on presence/absence of taxa, ignoring their abundances. 
           It quantifies how many taxa are shared versus unique to each sample."),
-        p(strong("Euclidean distance:"), "The geometric (straight-line) distance between two samples in multidimensional space, where each dimension corresponds to a feature 
-          and and the coordinate of a sample along each axis is determined by the abundance of that feature. Euclidean distance assumes absolute values are important, which
-          can be misleading with microbiome data."),
-        p(strong("Aitchison distance:"), "The Euclidean distance between samples after centered log-ratio (CLR) transformation (which projects the compositional data from the simplex into Euclidean space)."),
+        p(strong("Aitchison distance:"), "The Euclidean (straight-line) distance between two samples after centered log ratio (CLR) transformation. CLR transformation maps 
+        compositional microbiome data from the simplex into Euclidean space by removing the constant-sum constraint, making Euclidean distance geometrically meaningful."),
         easyClose = TRUE,
         footer = modalButton("Close")
       )
     )
   })
-
   
+  
+  # reactive data.frame for NMDS plot
+  beta_nmds_df <- reactive({
+    metric <- input$beta_metric
+    ord <- beta_diversity[[metric]]$ordination$nmds
+    df <- as.data.frame(ord$points) # extract coordinates
+    df$sample_id <- rownames(df)
+    
+    # merge with filtered metadata
+    df <- left_join(df, beta_meta_filtered(), by = "sample_id")
+    
+    # compute centroids per gavage x day
+    df_centroids <- df %>%
+      group_by(gavage, day_factor) %>%
+      summarize(mean_MDS1 = mean(MDS1),
+                mean_MDS2 = mean(MDS2),
+                .groups = "drop") %>%
+      arrange(gavage, as.numeric(as.character(day_factor)))
+    
+    list(df = df, df_centroids = df_centroids)
+  })
+  
+  # NMDS plot
+  output$nmds_plot <- renderPlot({
+    
+    metric <- input$beta_metric
+    ord <- beta_diversity[[metric]]$ordination$nmds
+    
+    validate(
+      need(!is.null(ord),
+           "NMDS is only available for non-Euclidean distance metrics (Bray-Curtis, Jaccard and Canberra). Euclidean distances have closed-form ordination solutions (i.e., PCA), so applying an iterative, rank-based method like NMDS would unnecessarily discard metric and variance information."))
+    
+    nmds_data <- beta_nmds_df()
+    
+    # add stress subtitle
+    stress_value  <- ord$stress 
+    
+    # define a simple interpretation
+    stress_label <- if(stress_value < 0.05) {
+      "excellent representation"
+    } else if(stress_value < 0.1) {
+      "good representation"
+    } else if(stress_value < 0.2) {
+      "fair representation"
+    } else if(stress_value < 0.3) {
+      "poor representation"
+    } else {
+      "unreliable representation"
+    }
+    
+    stress_text <- paste0("stress = ", round(stress_value, 4), " (", stress_label, ")")
+    
+    
+    ggplot(nmds_data$df, aes(x = MDS1, y = MDS2)) +
+      geom_path(data = nmds_data$df_centroids,
+                aes(x = mean_MDS1, y = mean_MDS2, group = gavage, color = gavage),
+                arrow = arrow(length = unit(0.2, "cm")), linewidth = 0.5) +
+      geom_point(aes(x = MDS1, y = MDS2, color = gavage, size = day_factor), 
+                 shape = 21, stroke = 0.6, fill = NA, alpha = 1) +
+      geom_point(aes(x = MDS1, y = MDS2, fill = gavage, size = day_factor), 
+                 shape = 21, stroke = 0, alpha = 0.35) +
+      stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
+      scale_fill_discrete(guide = "none") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      labs(subtitle = stress_text) +
+      xlab("NMDS1") + ylab("NMDS2") + theme_minimal()
+  })
+  
+  # info pop-up for NMDS Plot
+  observeEvent(input$info_nmds_plot, {
+    showModal(
+      modalDialog(
+        title = "Non-metric Multidimensional Scaling Plot",
+        p("NMDS is an unconstrained ordination method that represents samples in a low-dimensional space by preserving 
+          the rank order of pairwise dissimilarities rather than their absolute values."),
+        p("Unlike PCoA, NMDS does not rely on eigen-decomposition and does not produce axes that explain a defined 
+          proportion of variance. Instead, NMDS uses iterative optimization to minimize stress (i.e., a measure of mismatch 
+          between observed dissimilarities and distances in the ordination space)."),
+        p("NMDS is particularly well-suited for non-Euclidean distance metrics commonly used in microbiome studies 
+          (e.g., Bray–Curtis, Jaccard, Canberra), where preserving rank relationships is often more meaningful 
+          than preserving absolute distances (microbiome data is compositional and not absolute)."),
+        p(strong("Bray-Curtis distance:"), "Measures the compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
+          It is computed as the weighted sum of absolute differences, where weights are the abundances, thus the metric is dominated by abundant taxa."),
+        p(strong("Canberra distance:"), "Measures compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
+          It sums the ratios of the absolute differences to the sums of the abundances for each taxon, thereby giving relatively equal weight to rare and abundant taxa 
+          (i.e., rare taxa contribute proportionally more than they would in Bray-Curtis)."),
+        p(strong("Jaccard distance:"), "Measures the dissimilarity between two samples based on presence/absence of taxa, ignoring their abundances. 
+          It quantifies how many taxa are shared versus unique to each sample."),
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # reactive data.frame for PCA plot
+  beta_pca_df <- reactive({
+    metric <- input$beta_metric
+    ord <- beta_diversity[[metric]]$ordination$pca
+    df <- as.data.frame(ord$x) # extract coordinates
+    df$sample_id <- rownames(df)
+    
+    # merge with filtered metadata
+    df <- left_join(df, beta_meta_filtered(), by = "sample_id")
+    
+    # compute variance explained
+    var_explained <- round(100 * summary(ord)$importance[2, 1:2], 1) # extract percentage of variance explained
+    
+    # compute centroids per gavage x day
+    df_centroids <- df %>%
+      group_by(gavage, day_factor) %>%
+      summarize(mean_PC1 = mean(PC1),
+                mean_PC2 = mean(PC2),
+                .groups = "drop") %>%
+      arrange(gavage, as.numeric(as.character(day_factor)))
+    
+    list(df = df, df_centroids = df_centroids, var_explained = var_explained)
+  })
+  
+  # PCA plot
+  output$pca_plot <- renderPlot({
+    metric <- input$beta_metric
+    ord <- beta_diversity[[metric]]$ordination$pca
+
+    validate(
+      need(!is.null(ord),
+            "PCA is only available for Euclidean distances (Aitchison). PCA relies on linear geometry and variance–covariance structure, which are only well-defined in Euclidean space. Non-Euclidean distance metrics (e.g., Bray–Curtis, Jaccard and Canberra) do not preserve this structure, so applying PCA would result in axes and variance estimates that are not mathematically meaningful."))
+    
+    pca_data <- beta_pca_df()
+    
+    ggplot(pca_data$df, aes(x = PC1, y = PC2)) +
+      geom_path(data = pca_data$df_centroids,
+                aes(x = mean_PC1, y = mean_PC2, group = gavage, color = gavage),
+                arrow = arrow(length = unit(0.2, "cm")), linewidth = 0.5) +
+      geom_point(aes(x = PC1, y = PC2, color = gavage, size = day_factor), 
+                 shape = 21, stroke = 0.6, fill = NA, alpha = 1) +
+      geom_point(aes(x = PC1, y = PC2, fill = gavage, size = day_factor), 
+                 shape = 21, stroke = 0, alpha = 0.35) +
+      stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
+      scale_fill_discrete(guide = "none") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      xlab(paste0("PC1 (", round(pca_data$var_explained[1], 1), "%)")) +
+      ylab(paste0("PC2 (", round(pca_data$var_explained[2], 1), "%)")) +
+      theme_minimal()
+  })
+  
+  # info pop-up for PCA Plot
+  observeEvent(input$info_pca_plot, {
+    showModal(
+      modalDialog(
+        title = "Principal Component Analysis Plot",
+        p("PCA is an unconstrained ordination method that represents samples in a low-dimensional space by 
+          directly decomposing the multivariate data matrix, rather than a distance or dissimilarity matrix."),
+        p("Each axis (principal component) represents the amount of variation in the original data explained by that axis."),
+        p("PCA requires Euclidean geometry and is therefore only appropriate when the data lie in Euclidean space."),
+        p(strong("Aitchison distance:"), "The Euclidean (straight-line) distance between two samples after centered-log ratio (CLR) transformation. CLR transformation maps 
+        compositional microbiome data from the simplex into Euclidean space by removing the constant-sum constraint, making Euclidean distance geometrically meaningful. 
+          Distances therefore reflect differences in log-ratios (i.e., relative fold changes) between components."),
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+
   # overall PERMANOVA table
   output$permanova_overall <- renderTable({
     metric <- input$beta_metric
     df <- as.data.frame(beta_diversity[[metric]]$permanova$overall)
     
-    # match adonis2 formatting
+    # format table
     df_formatted <- df %>% 
       tibble::rownames_to_column("Model Term") %>%
       mutate(Df = format(round(Df, 0), nsmall = 0),
@@ -588,8 +779,8 @@ server <- function(input, output, session) {
     showModal(
       modalDialog(
         title = "How to Read the PERMANOVA Table",
-        p("A PERMANOVA tests whether the centroids of groups are significantly different in multivariate space. 
-          Permutations to calculate p-values as the distribution of distances is usually non-normal."),
+        p("PERMANOVA tests whether the centroids of groups in multivariate space are significantly farther apart than expected by chance. 
+          Permutations are used to calculate p-values as the distribution of distances is usually non-normal."),
         p(strong("Df (Degrees of freedom):"), "Number of independent observations in a dataset that are available to estimate parameters or variability.
           In repeated-measures designs or stratified analysis, Df is reduced since observations are not fully independent."),
         p(strong("SumOfSqs (Sum of squares):"), "Total variance explained by the model (model) and not explained by the model (residual)."),
@@ -625,8 +816,8 @@ server <- function(input, output, session) {
     showModal(
       modalDialog(
         title = "How to Read the Time-resolved PERMANOVA Table",
-        p("A PERMANOVA tests whether the centroids of groups are significantly different in multivariate space. 
-          Permutations to calculate p-values as the distribution of distances is usually non-normal."),
+        p("PERMANOVA tests whether the centroids of groups are significantly farther apart in the multivariate space than expected by chance. 
+          Permutations are used to calculate p-values as the distribution of distances is usually non-normal."),
         p(strong("pairs:"), "The two treatment groups being compared."),
         p(strong("SumsOfSqs (Sum of squares):"), "Total variance explained by the difference between the two groups"),
         p(strong("F.model:"), "F-statistic from permutation testing (ratio of signal to noise)."),
@@ -728,6 +919,176 @@ server <- function(input, output, session) {
         p(strong("N.Perm:"), "Number of permutations used to calculate the p-value."),
         p(strong("Pr(>F):"), "Permutation-based p-value."),
         p(strong("Time"), "The timepoint at which the comparison was made."),
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # reactive data.frame for constrained ordination plot
+  beta_con_ord_df <- reactive({
+    metric <- input$beta_metric
+    con <- beta_diversity[[metric]]$ordination$con_ord
+    cap_df <- as.data.frame(scores(con, display = "sites")) # get CAP coordinates
+    cap_df$sample_id <- rownames(cap_df)
+
+    # merge with filtered metadata
+    cap_df <- left_join(cap_df, beta_meta_filtered(), by = "sample_id")
+    
+    # compute variance explained
+    var_explained <- con$CCA$eig / sum(con$tot.chi) * 100
+    
+    # compute centroids
+    axis_names <- colnames(cap_df)[1:2] # column names depend on method (capscale or rda)
+    
+    cap_df <- cap_df %>%
+      rename(x = !!axis_names[1], 
+             y = !!axis_names[2]) 
+    
+    df_centroids <- cap_df %>%
+      group_by(gavage, day_factor) %>%
+      summarize(mean_x = mean(x),
+                mean_y = mean(y),
+                .groups = "drop") %>%
+      arrange(gavage, as.numeric(as.character(day_factor)))
+    
+    list(df = cap_df, df_centroids = df_centroids, var_explained = var_explained)
+  })
+  
+  # constrained ordination plot
+  output$con_ord_plot <- renderPlot({
+    con_ord_data <- beta_con_ord_df()
+
+    ggplot(con_ord_data$df, aes(x = x, y = y)) +
+      geom_path(data = con_ord_data$df_centroids,
+                aes(x = mean_x, y = mean_y, group = gavage, color = gavage),
+                arrow = arrow(length = unit(0.2, "cm")), linewidth = 0.5) +
+      geom_point(aes(color = gavage, size = day_factor),
+                 shape = 21, stroke = 0.6, fill = NA, alpha = 1) +
+      geom_point(aes(fill = gavage, size = day_factor), 
+                 shape = 21, stroke = 0, alpha = 0.35) +
+      stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
+      scale_fill_discrete(guide = "none") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      xlab(paste0("CAP1 (", round(con_ord_data$var_explained[1], 1), "%)")) +
+      ylab(paste0("CAP2 (", round(con_ord_data$var_explained[2], 1), "%)")) +
+      theme_minimal()
+  })
+  
+  # info pop-up for constrained ordination plot
+  observeEvent(input$info_con_ord_plot, {
+    showModal(
+      modalDialog(
+        title = "Constrained Ordination Plot",
+        p("Constrained ordination represents samples in a low-dimensional space while focusing on variation explained by one or more experimental variables (e.g., gavage and day)."),
+        p("Unlike unconstrained methods (e.g., PCoA, NMDS or PCA), the ordination axes are restricted to linear combinations of the experimental variables (the percentage of variance on each axis reflects 
+          the proportion of variation explained by the experimental variables). Thus constrained ordination is particularly useful for assessing how much variation in microbiome composition can be explained by these variables"), 
+        p("Constrained ordiantion can be used with both Euclidean and non-Euclidean distance metrics."),
+        p(strong("Bray-Curtis distance:"), "Measures the compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
+          It is computed as the weighted sum of absolute differences, where weights are the abundances, thus the metric is dominated by abundant taxa."),
+        p(strong("Canberra distance:"), "Measures compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
+          It sums the ratios of the absolute differences to the sums of the abundances for each taxon, thereby giving relatively equal weight to rare and abundant taxa 
+          (i.e., rare taxa contribute proportionally more than they would in Bray-Curtis)."),
+        p(strong("Jaccard distance:"), "Measures the dissimilarity between two samples based on presence/absence of taxa, ignoring their abundances. 
+          It quantifies how many taxa are shared versus unique to each sample."),
+        p(strong("Aitchison distance:"), "The Euclidean (straight-line) distance between two samples after centered log ratio (CLR) transformation. CLR transformation maps 
+        compositional microbiome data from the simplex into Euclidean space by removing the constant-sum constraint, making Euclidean distance geometrically meaningful."),
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+
+  # constrained ordination - overall permutation test
+  output$con_ord_overall <- renderTable({
+    metric <- input$beta_metric
+    df <- as.data.frame(beta_diversity[[metric]]$anova_perm$overall)
+    
+    # format table
+    df_formatted <- df %>% 
+      tibble::rownames_to_column("Model Term") %>%
+      mutate(Df = format(round(Df, 0), nsmall = 0),
+             F = ifelse(is.na(F), "", format(round(F, 3), nsmall = 3)),
+             `Pr(>F)` = ifelse(is.na(`Pr(>F)`), "", format(round(`Pr(>F)`, 3), nsmall = 3)))
+    
+    # ANOVA with capscale has SumOfSqs and ANOVA with rda has Variance
+    if ("SumOfSqs" %in% colnames(df_formatted)) {
+      df_formatted <- df_formatted %>%
+        mutate(SumOfSqs = format(round(SumOfSqs, 4), nsmall = 4))
+    } else if ("Variance" %in% colnames(df_formatted)) {
+      df_formatted <- df_formatted %>%
+        mutate(Variance = format(round(Variance, 4), nsmall = 4))
+    }
+    
+    df_formatted
+  })
+  
+  # constrained ordination - permutation tests by terms
+  output$con_ord_terms <- renderTable({
+    metric <- input$beta_metric
+    df <- as.data.frame(beta_diversity[[metric]]$anova_perm$terms) 
+    
+    # format table
+    df_formatted <- df %>% 
+      tibble::rownames_to_column("Model Term") %>%
+      mutate(Df = format(round(Df, 0), nsmall = 0),
+             F = ifelse(is.na(F), "", format(round(F, 3), nsmall = 3)),
+             `Pr(>F)` = ifelse(is.na(`Pr(>F)`), "", format(round(`Pr(>F)`, 3), nsmall = 3)))
+    
+    # ANOVA with capscale has SumOfSqs and ANOVA with rda has Variance
+    if ("SumOfSqs" %in% colnames(df_formatted)) {
+      df_formatted <- df_formatted %>%
+        mutate(SumOfSqs = format(round(SumOfSqs, 4), nsmall = 4))
+    } else if ("Variance" %in% colnames(df_formatted)) {
+      df_formatted <- df_formatted %>%
+        mutate(Variance = format(round(Variance, 4), nsmall = 4))
+    }
+    
+    df_formatted
+  })
+  
+  # constrained ordination - permutation tests by axis
+  output$con_ord_axis <- renderTable({
+    metric <- input$beta_metric
+    df <- as.data.frame(beta_diversity[[metric]]$anova_perm$axis)
+    
+    # format table
+    df_formatted <- df %>% 
+      tibble::rownames_to_column("Model Term") %>%
+      mutate(Df = format(round(Df, 0), nsmall = 0),
+             F = ifelse(is.na(F), "", format(round(F, 3), nsmall = 3)),
+             `Pr(>F)` = ifelse(is.na(`Pr(>F)`), "", format(round(`Pr(>F)`, 3), nsmall = 3)))
+    
+    # ANOVA with capscale has SumOfSqs and ANOVA with rda has Variance
+    if ("SumOfSqs" %in% colnames(df_formatted)) {
+      df_formatted <- df_formatted %>%
+        mutate(SumOfSqs = format(round(SumOfSqs, 4), nsmall = 4))
+    } else if ("Variance" %in% colnames(df_formatted)) {
+      df_formatted <- df_formatted %>%
+        mutate(Variance = format(round(Variance, 4), nsmall = 4))
+    }
+    
+    df_formatted
+  })
+  
+  # info pop-up for constrained ordination permutation test tables
+  observeEvent(input$info_con_ord_overall, {
+    showModal(
+      modalDialog(
+        title = "How to Read the Constrained Ordination ANOVA Tables",
+        p("A constrained ordination ANOVA tests how much of the variation in community composition is explained by the constrained variables and whether 
+        this explained variation is greater than expected by chance. Permutations are used to calculate p-values as the distribution of distances is usually non-normal."),
+        p(strong("Overall Permutation Test:"), "Tests whether the total variation in community structure explained jointly by gavage and day is greater than expected by chance."), 
+        p(strong("Permutation Test by Term:"), "Tests whether each term (gavage and day) explains more variation than expected by chance after accounting for the other term(s)."), 
+        p(strong("Permutation Test by Axis:"), "Tests whether each constrained ordination axis explains more of the variation attributable to the constraining variables than expected by chance."), 
+        p(strong("Df (Degrees of freedom):"), "Number of independent observations in a dataset that are available to estimate parameters or variability.
+          In repeated-measures designs or stratified analysis, Df is reduced since observations are not fully independent."),
+        p(strong("SumOfSqs (Sum of squares)/Variance:"), "Total variance explained by the model (model) and not explained by the model (residual). Sum of squares (sum of squared distances to a generalized centroid) 
+        is used with non-Euclidean distance matrices to approximate variance, since variance is not well-defined in non-Euclidean space (distances don't obey Euclidean rules/Pythagoras’ theorem)."),
+        p(strong("F:"), "F-statistic from permutation testing (ratio of signal to noise)."),
+        p(strong("Pr(>F):"), "Permutation-based p-value."),
         easyClose = TRUE,
         footer = modalButton("Close")
       )
