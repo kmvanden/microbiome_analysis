@@ -24,14 +24,14 @@ beta_diversity_metrics <- names(beta_diversity)
 
 ## UI
 ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "#2C3E50"), # responsive Bootstrap 5 layout
-                titlePanel("Longitudinal Microbiome Diversity Analysis"),
+                titlePanel("Longitudinal Microbiome Analysis"),
                 tags$style(HTML(".tab-content-spacing {margin-top: 20px;}")),
                 sidebarLayout(
-                  sidebarPanel(pickerInput(inputId = "diversity_type", label = "Diversity Type",
-                                           choices = c("alpha", "beta"), selected = "Alpha" ),
+                  sidebarPanel(pickerInput(inputId = "analysis_type", label = "Analysis Type",
+                                           choices = c("Alpha Diversity", "Beta Diversity", "Differential Abundance"), selected = "Alpha Diversity" ),
                                
                                ### Alpha diversity dropdowns
-                               conditionalPanel(condition = "input.diversity_type == 'alpha'",
+                               conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity'",
                                                 pickerInput(inputId = "alpha_metric", label = "Alpha Diversity Metric",
                                                              choices = alpha_diversity_metrics, selected = "Observed"), # alpha diversity metric dropdown
                                                  pickerInput(inputId = "gavage", label = "Treatment Group",
@@ -42,7 +42,7 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                              choices = c("LMM", "GAMM"), selected = "LMM")),
                                
                                ### Beta diversity dropdowns
-                               conditionalPanel(condition = "input.diversity_type == 'beta'",
+                               conditionalPanel(condition = "input.analysis_type == 'Beta Diversity'",
                                                 pickerInput(inputId = "beta_metric", label = "Beta Diversity Metric",
                                                             choices = beta_diversity_metrics, selected = "bray_curtis"),
                                                 pickerInput(inputId = "gavage", label = "Treatment Group",
@@ -55,7 +55,7 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                     ### Alpha diversity tabs
                     
                     # LMM tabs
-                    conditionalPanel(condition = "input.diversity_type == 'alpha' && input.model_type == 'LMM'",
+                    conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity' && input.model_type == 'LMM'",
                                      tabsetPanel(tabPanel("Alpha Diversity Metric Over Time Plot", 
                                                           div(class = "tab-content-spacing",
                                                           h4("Alpha Diversity Metric Over Time Plot", 
@@ -80,15 +80,15 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                           actionButton("info_lmm_model_summary", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                               verbatimTextOutput("lmm_model_summary"))),
-                                                 tabPanel("Residuals and QQ Plots (LMM)",
+                                                 tabPanel("Model Diagnostics Plots (LMM)",
                                                           div(class = "tab-content-spacing",
-                                                          h4("Residuals and QQ Plots (LMM)", 
+                                                          h4("Model Diagnostics Plots (LMM)", 
                                                           actionButton("info_lmm_resid_plot", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                          plotOutput("lmm_resid_plot", height = 400), plotOutput("lmm_qq_plot", height = 400))))),
+                                                          plotOutput("lmm_resid_plot", height = 400), plotOutput("lmm_qq_plot", height = 400), plotOutput("lmm_resp_plot", height = 400))))),
                     
                     # GAMM tabs
-                    conditionalPanel(condition = "input.diversity_type == 'alpha' && input.model_type == 'GAMM'",
+                    conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity' && input.model_type == 'GAMM'",
                                      tabsetPanel(tabPanel("Alpha Diversity Metric Over Time Plot",
                                                           div(class = "tab-content-spacing",
                                                            h4("Alpha Diversity Metric Over Time Plot", 
@@ -107,12 +107,12 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                           actionButton("info_gamm_model_summary", label = NULL, icon = icon("question-circle"), 
                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                               verbatimTextOutput("gamm_model_summary"))),
-                                                 tabPanel("Residuals and QQ Plots (GAMM)", 
+                                                 tabPanel("Model Diagnostics Plots (GAMM)", 
                                                           div(class = "tab-content-spacing",
-                                                          h4("Residuals and QQ Plots (GAMM)", 
+                                                          h4("Model Diagnostics Plots (GAMM)", 
                                                           actionButton("info_gamm_resid_plot", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                              plotOutput("gamm_resid_plot", height = 400), plotOutput("gamm_qq_plot", height = 400))),
+                                                              plotOutput("gamm_resid_plot", height = 400), plotOutput("gamm_qq_plot", height = 400), plotOutput("gamm_resp_plot", height = 400))),
                                                  tabPanel("Concurvity (GAMM)", 
                                                           div(class = "tab-content-spacing",
                                                           h4("Concurvity (GAMM)", 
@@ -121,7 +121,7 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                               tableOutput("gamm_concurvity"))))),
                     
                     ### Beta diversity tabs
-                    conditionalPanel(condition = "input.diversity_type == 'beta'",
+                    conditionalPanel(condition = "input.analysis_type == 'Beta Diversity'",
                                      tabsetPanel(tabPanel("PCoA Plot",
                                                           div(class = "tab-content-spacing",
                                                           h4("Principal Coordinate Analysis Plot", 
@@ -331,31 +331,49 @@ server <- function(input, output, session) {
     abline(h = 0, lty = 2)
   })
   
-  # plot LMM Q-Q
+  # plot LMM normal Q-Q
   output$lmm_qq_plot <- renderPlot({
     model <- alpha_diversity$models[[input$alpha_metric]]$lmm$model
     qqnorm(resid(model), main = "LMM Normal Q-Q")
     qqline(resid(model))
   })
   
+  
+  # plot LMM response plot
+  output$lmm_resp_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm$model
+    plot(fitted(model), alpha_diversity$metrics[[input$alpha_metric]],
+         ylab = "Response", xlab = "Fitted Values",
+         main = "LMM Response vs Fitted Values")
+    abline(a = 0, b = 1, lty = 2)
+  })
+  
+  
   # info pop-up for LMM residuals vs fitted and Q-Q plots
   observeEvent(input$info_lmm_resid_plot, {
     showModal(
       modalDialog(
-        title = "How to Interpret the Residuals and Q-Q Plots",
-        p("The Residuals versus Fitted plot is used to check whether the statistical model is appropriate for the data, whether the remaining errors (residuals) are random 
+        title = "How to Interpret the Residuals vs Fitted Values Plot, the Normal Q-Q Plot and the Response vs Fitted Values Plot",
+        p("The Residuals versus Fitted Values plot is used to check whether the statistical model is appropriate for the data by checking whether the remaining errors (residuals) are random 
           or if they show structure the model failed to capture. The points should be randomly scattered around zero (i.e., no clear pattern or trend)."),
         p(strong("Curved pattern:"), "Model failed to capture nonlinear strucutre in the mean (e.g., missing interaction)."),
         p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
         p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
         p(strong("Extreme outliers:"), "Influential points or possible errors."),
-        p("The Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
+        p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
           Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
-          If residuals are not normal, p-values are confidence intervals may be unreliable."),
+          If residuals are not normal, p-values and confidence intervals may be unreliable."),
         p(strong("Points lie on a straight 45° line:"), "Residuals are approximately normally distributed."),
         p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
         p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
         p(strong("Large deviations at the ends:"), "Potential outliers."),
+        p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
+          captures the overall trends in the data and whether there are systematic deviations."),
+        p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
+        p(strong("Points systematically above or below the line:"), "The model under- or over-predicts in certain ranges."),
+        p(strong("Nonlinear patterns or curves:"), "The model may be missing key nonlinear effects or interactions."),
+        p(strong("Large scatter or wide spread around the line:"), "High residual variance; model may not explain much of the variation."),
+        p(strong("Clusters or gaps:"), "Indicates group-specific effects or unmodeled structure in the data."),
         footer = modalButton("Close")
       )
     )
@@ -421,40 +439,60 @@ server <- function(input, output, session) {
   })
   
   
-  # plot GAMM residuals
+  # plot GAMM residuals plot
   output$gamm_resid_plot <- renderPlot({
     model <- alpha_diversity$models[[input$alpha_metric]]$gamm$model$gam
     plot(fitted(model), resid(model),
-         xlab = "Fitted values", ylab = "Residuals",
-         main = "GAMM Residuals vs Fitted")
+        ylab = "Residuals", xlab = "Fitted Values",
+         main = "GAMM Residuals vs Fitted Values Plot")
     abline(h = 0, lty = 2)
   })
   
-  # plot GAMM Q-Q
+  # plot GAMM normal Q-Q plot
   output$gamm_qq_plot <- renderPlot({
     res <- alpha_diversity$models[[input$alpha_metric]]$gamm$residuals
-    qqnorm(res, main = "GAMM Residuals Q-Q")
+    qqnorm(res, 
+           ylab = "Deviance Residuals", xlab = "Theoretical Quantiles",
+           main = "GAMM Normal Q-Q Plot")
     qqline(res)
   })
   
-  # info pop-up for GAM residuals vs fitted and Q-Q plots
+  
+  # plot GAMM response plot
+  output$gamm_resp_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$gamm$model$gam
+    plot(fitted(model), alpha_diversity$metrics[[input$alpha_metric]],
+         ylab = "Response", xlab = "Fitted Values",
+         main = "GAMM Response vs Fitted Values")
+    abline(a = 0, b = 1, lty = 2)
+  })
+    
+    
+  # info pop-up for GAM residuals vs fitted plot, normal Q-Q plot and response vs fitted plot
   observeEvent(input$info_gamm_resid_plot, {
     showModal(
       modalDialog(
-        title = "How to Interpret the Residuals and Q-Q Plots",
-        p("The Residuals versus Fitted plot is used to check whether the statistical model is appropriate for the data, whether the remaining errors (residuals) are random 
+        title = "How to Interpret the Residuals vs Fitted Values Plot, the Normal Q-Q Plot and the Response vs Fitted Values Plot",
+        p("The Residuals versus Fitted Values plot is used to check whether the statistical model is appropriate for the data by checking whether the remaining errors (residuals) are random 
           or if they show structure the model failed to capture. The points should be randomly scattered around zero (i.e., no clear pattern or trend)."),
         p(strong("Curved pattern:"), "Model failed to capture nonlinear strucutre in the mean (e.g., missing interaction)."),
         p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
         p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
         p(strong("Extreme outliers:"), "Influential points or possible errors."),
-        p("The Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
+        p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
           Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
-          If residuals are not normal, p-values are confidence intervals may be unreliable."),
+          If residuals are not normal, p-values and confidence intervals may be unreliable."),
         p(strong("Points lie on a straight 45° line:"), "Residuals are approximately normally distributed."),
         p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
         p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
         p(strong("Large deviations at the ends:"), "Potential outliers."),
+        p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
+          captures the overall trends in the data and whether there are systematic deviations."),
+        p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
+        p(strong("Points systematically above or below the line:"), "The model under- or over-predicts in certain ranges."),
+        p(strong("Nonlinear patterns or curves:"), "The model may be missing key nonlinear effects or interactions."),
+        p(strong("Large scatter or wide spread around the line:"), "High residual variance; model may not explain much of the variation."),
+        p(strong("Clusters or gaps:"), "Indicates group-specific effects or unmodeled structure in the data."),
         footer = modalButton("Close")
       )
     )
@@ -475,7 +513,7 @@ server <- function(input, output, session) {
         p(strong("Link function:"), "Whether the data was transformed. Identity = no transformation"),
         p(strong("Parametric coefficients:"), "Represent the linear (fixed) effects in the model. Each group term is the linear difference from the reference group."),
         p(strong("Smooth terms:"), "Indicates whether adding nonlinearity significantly improves the model for a given group."),
-        p(strong("edf (estimated degrees of freedom:"), "How wiggly the smooth is. > 1 = some nonlinearity"),
+        p(strong("edf (effective degrees of freedom:"), "How wiggly the smooth is. > 1 = some nonlinearity"),
         p(strong("R-sq. (adj):"), "Proportion of the variance explained by the model."),
         p(strong("Scale est."), "In Gaussian models, the scale parameter is an estimate of the residual variance (i.e., the amount of variation in your response variable that your model cannot explain)."),
         footer = modalButton("Close")
