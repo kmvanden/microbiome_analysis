@@ -12,6 +12,10 @@ library(lmerTest)
 library(emmeans)
 library(pairwiseAdonis)
 library(mgcv)
+library(compositions)
+library(purrr)
+library(gratia)
+
 
 # setwd
 setwd("/Users/kristinvandenham/kmvanden/RStudio")
@@ -52,6 +56,7 @@ alpha_diversity_metrics$Chao1 <- estimate_richness(ps, measures = "Chao1")$Chao1
 alpha_diversity_metrics$Observed <- estimate_richness(ps_rarefied, measures = "Observed")$Observed # add Observed to alpha_diversity_metrics
 alpha_diversity_metrics$sample_name <- rownames(alpha_diversity_metrics) # add column with sample names
 alpha_div_df <- left_join(alpha_diversity_metrics, meta, by = c("sample_name" = "sample_id")) # merge phyloseq object with metadata (for plotting and statistical tests) 
+alpha_div_df <- alpha_div_df %>% mutate(day_c = day - mean(day)) # center day (day zero does not exist)
 
 
 ### linear mixed effects models
@@ -70,8 +75,9 @@ fit_lmm <- function(metric, data = data) {
 
 ### generalized additive mixed models
 fit_gamm <- function(metric, data) {
+  
   data$gavage <- as.factor(data$gavage)
-  formula <- as.formula(paste0(metric, " ~ s(day, k = 4, by = gavage) + gavage"))
+  formula <- as.formula(paste0(metric, " ~ gavage + s(day_c, by = gavage, bs = 'fs', k = 4)"))
   gamm_obj <- mgcv::gamm(formula, random = list(mouse_id = ~1), data = data)
   
   # precompute residuals
@@ -80,8 +86,13 @@ fit_gamm <- function(metric, data) {
   # precompute concurvity
   conc <- mgcv::concurvity(gamm_obj$gam, full = TRUE)
   
+  # precompute pairwise smooth differences
+  smooth_diff <- difference_smooths(gamm_obj$gam, select = "s(day_c)") %>%
+    mutate(metric = metric, .before = 1) %>%
+    mutate(day_c = day_c + mean(data$day)) # to have day for plotting
+  
   # precompute smooth predictions for plotting
-  smooth_df <- expand.grid(day = seq(min(data$day), max(data$day), length = 200),
+  smooth_df <- expand.grid(day_c = seq(min(data$day_c), max(data$day_c), length = 200),
                            gavage = levels(data$gavage))
   
   # predict smooths
@@ -92,12 +103,16 @@ fit_gamm <- function(metric, data) {
   smooth_df$upper <- pred$fit + 2 * pred$se.fit
   smooth_df$lower <- pred$fit - 2 * pred$se.fit
   
+  # add day to smooth_df
+  smooth_df$day <- smooth_df$day_c + mean(data$day)
+  
   # list to store
   list(model = gamm_obj,
        summary = summary(gamm_obj$gam),
        residuals = res,
        concurvity = conc,
-       smooth_df = smooth_df)
+       smooth_df = smooth_df,
+       smooth_diff = smooth_diff)
 }
 
 # fit models for all metrics
@@ -282,4 +297,202 @@ for (metric in names(distances)) {
 }
 
 saveRDS(beta_diversity, "microbiome_analysis/shiny_longitudinal/beta_diversity.rds")
+
+
+################################################################################
+#####     DIFFERENTIAL ABUNDANCE ANALYSIS PRECOMPUTATION FOR SHINY APP     #####
+################################################################################
+
+### relative abundance table
+# use the created phyloseq object
+
+# filter low prevalence taxa (present in less than 10% of samples)
+ps_filt <- filter_taxa(ps, function(x) sum(x > 0) >= 0.1 * nsamples(ps), prune = TRUE)
+
+# convert to relative abundance 
+ps_rel <- transform_sample_counts(ps_filt, function(x) x / sum(x)) 
+
+# long format data.frame for plotting
+df_taxa <- psmelt(ps_rel)  
+
+# summarize relative abundance of taxa over time and gavage group
+rel_abun_df <- df_taxa %>%
+  group_by(day, gavage, OTU) %>%
+  summarize(mean_abundance = mean(Abundance), 
+            sem = sd(Abundance)/sqrt(n()),
+            .groups = "drop") %>%
+  rename(taxon = OTU) %>%
+  as.data.frame()
+
+
+### data.frame for heatmap and stacked barplot
+# use ps_rel from the relative abundance table 
+
+# melt to long format
+comm_over_df <- psmelt(ps_rel)
+
+# aggregate by gavage_day (mean across samples)
+comm_over_df <- comm_over_df %>%
+  group_by(gavage_day, OTU, gavage, day, day_factor) %>%
+  summarise(abundance = mean(Abundance), .groups = "drop")
+
+
+### generalized additive mixed models
+
+# filter low prevalence taxa (present in less than 10% of samples)
+feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
+
+# CLR transformation
+feat_filtered <- t(feat_filtered) # transpose
+feat_rel_abund <- feat_filtered/rowSums(feat_filtered) # convert feature table to relative abundances
+feat_clr <- clr(feat_rel_abund + 1e-6) # add pseudocount and perform CLR transformation
+feat_clr <- t(feat_clr)
+feat_clr <- as.data.frame(feat_clr)
+
+# ensure sample names are the same
+stopifnot(all(colnames(feat_clr) == rownames(meta)))
+
+# pivot feature table to long form
+feat_long <- feat_clr %>%
+  rownames_to_column(var = "taxon") %>%
+  pivot_longer(cols = -taxon,
+               names_to = "sample_id",
+               values_to = "abundance")
+
+# merge with metadata
+df_long <- feat_long %>%
+  left_join(meta, by = "sample_id")
+
+# convert gavage to factor
+df_long$gavage <- as.factor(df_long$gavage)
+
+# center day (day zero does not exist)
+df_long <- df_long %>% mutate(day_c = day - mean(day))
+
+
+### function for generalized additive mixed model
+fit_gamm_taxon <- function(taxon_name, data) {
+  
+  # filter long data.frame by taxon
+  df_taxon <- data %>% filter(taxon == taxon_name)
+  
+  out <- tryCatch({
+  gamm_obj <- mgcv::gamm(abundance ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+                         random = list(mouse_id = ~1),
+                         data = df_taxon)
+  
+  # precompute residuals
+  res <- resid(gamm_obj$gam)
+  
+  # precompute concurvity
+  conc <- mgcv::concurvity(gamm_obj$gam, full = TRUE)
+  
+  # precompute pairwise smooth differences
+  smooth_diff <- difference_smooths(gamm_obj$gam, select = "s(day_c)") %>%
+    mutate(taxon = taxon_name, .before = 1) %>%
+    mutate(day_c = day_c + mean(df_taxon$day)) # to have day for plotting
+  
+  # precompute summary
+  sum <- summary(gamm_obj$gam)
+  
+  
+  ### extract parameteric and smooth terms separately and rename columns
+  # parameteric terms (gavage)
+  param_df <- as.data.frame(sum$p.table) %>%
+    mutate(term = rownames(sum$p.table),
+           taxon = taxon_name,
+           .before = 1) %>%
+    rename(estimate = Estimate, std_error = `Std. Error`,
+           t_value = `t value`, p_value = `Pr(>|t|)`)
+  
+  # smooth terms (s(day):gavage)
+  smooth_df <- as.data.frame(sum$s.table) %>%
+    mutate(smooth = rownames(sum$s.table),
+           taxon = taxon_name,
+           .before = 1) %>%
+    rename(edf = edf, ref_df = Ref.df, 
+           F_value = F, p_value = `p-value`)
+  
+    
+  ### precompute smooth predictions for plotting
+  smooth_pred <- expand.grid(day_c = seq(min(df_taxon$day_c), max(df_taxon$day_c), length = 200),
+                             gavage = levels(df_taxon$gavage))
+  
+  # predict smooths
+  pred <- predict(gamm_obj$gam, newdata = smooth_pred, se.fit = TRUE, type = "response") 
+  
+  # add predictions to smooth_pred
+  smooth_pred$fit <- pred$fit
+  smooth_pred$upper <- pred$fit + 2 * pred$se.fit
+  smooth_pred$lower <- pred$fit - 2 * pred$se.fit
+  smooth_pred$taxon <- taxon_name
+  
+  # add day to smooth_df
+  smooth_pred$day <- smooth_pred$day_c + mean(df_taxon$day)
+  
+  # list to store
+  list(model = gamm_obj,
+       data = df_taxon,
+       summary_param = param_df,
+       summary_smooth = smooth_df,
+       residuals = res,
+       concurvity = conc,
+       smooth_pred = smooth_pred,
+       smooth_diff = smooth_diff,
+       success = TRUE,
+       error = NA) 
+  
+  }, error = function(e) {
+    
+    list(model = NULL,
+         data = NULL,
+         summary_param = tibble(term = NA, taxon = taxon_name),
+         summary_smooth = tibble(smooth = NA, taxon = taxon_name),
+         residuals = NULL,
+         concurvity = NULL,
+         smooth_pred = NULL,
+         smooth_diff = NULL,
+         success = FALSE,
+         error = as.character(e)) 
+    
+  })
+  out
+}
+
+
+# fit models for all taxa
+taxa_list <- unique(df_long$taxon) # list of all taxa
+gamm_results_taxa <- purrr::map(taxa_list, ~ fit_gamm_taxon(.x, df_long))
+names(gamm_results_taxa) <- taxa_list
+
+# calculate adjusted p-value for parametric coefficients and smooths
+param_all <- purrr::map_df(gamm_results_taxa, "summary_param")
+smooth_all <- purrr::map_df(gamm_results_taxa, "summary_smooth")
+
+param_all$p_adj <- p.adjust(param_all$p_value, method = "BH")
+smooth_all$p_adj <- p.adjust(smooth_all$p_value, method = "BH")
+
+# add p_adj values to summany_param and summary_smooth individual taxon models
+gamm_results_taxa <- lapply(gamm_results_taxa, function(x) {
+  x$summary_smooth <- x$summary_smooth %>%
+    left_join(smooth_all %>% select(smooth, taxon, p_adj), by = c("smooth", "taxon"))
+  
+  x$summary_param <- x$summary_param %>%
+    left_join(param_all %>% select(term, taxon, p_adj), by = c("term", "taxon"))
+  
+  return(x)
+})
+
+# pairwise smooth differences
+all_smooth_diffs <- purrr::map_df(gamm_results_taxa, "smooth_diff")
+
+
+# save differential abundance outputs to avoid recalculation in the Shiny app
+differential_abundance <- list(comm_over = comm_over_df,
+                               rel_abun = rel_abun_df,
+                               gamm = list(data = df_long,
+                                           models = gamm_results_taxa,
+                                           smooth_diff = all_smooth_diffs))
+
+saveRDS(differential_abundance, "microbiome_analysis/shiny_longitudinal/differential_abundance.rds")
 
