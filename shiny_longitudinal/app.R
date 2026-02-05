@@ -8,6 +8,9 @@ library(tidyverse)
 library(ggplot2)
 library(shinyWidgets)
 library(DT)
+library(vegan)
+library(gratia)
+library(pheatmap)
 
 # setwd
 setwd("/Users/kristinvandenham/kmvanden/RStudio/microbiome_analysis/shiny_longitudinal")
@@ -16,6 +19,7 @@ setwd("/Users/kristinvandenham/kmvanden/RStudio/microbiome_analysis/shiny_longit
 metadata <- readRDS("metadata.rds")
 alpha_diversity <- readRDS("alpha_diversity.rds")
 beta_diversity <- readRDS("beta_diversity.rds")
+differential_abundance <- readRDS("differential_abundance.rds")
 
 
 # types of diversity metrics
@@ -30,31 +34,65 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                   sidebarPanel(pickerInput(inputId = "analysis_type", label = "Analysis Type",
                                            choices = c("Alpha Diversity", "Beta Diversity", "Differential Abundance"), selected = "Alpha Diversity" ),
                                
+                               # global gavage picker (plots only)
+                               pickerInput(inputId = "gavage_plot",
+                                           label = "Groups to Display",
+                                           choices = unique(metadata$gavage),
+                                           selected = unique(metadata$gavage),
+                                           multiple = TRUE),
+                               helpText("Note: Gavage selection only affects plots. Statistical models are fit using all groups."),
+                               
                                ### Alpha diversity dropdowns
                                conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity'",
                                                 pickerInput(inputId = "alpha_metric", label = "Alpha Diversity Metric",
                                                              choices = alpha_diversity_metrics, selected = "Observed"), # alpha diversity metric dropdown
-                                                 pickerInput(inputId = "gavage", label = "Treatment Group",
-                                                             choices = unique(metadata$gavage),
-                                                             selected = unique(metadata$gavage),
-                                                             multiple = TRUE), # treatment (gavage) group multi-select dropdown
                                                  pickerInput(inputId = "model_type", label = "Model Type",
                                                              choices = c("LMM", "GAMM"), selected = "LMM")),
                                
                                ### Beta diversity dropdowns
                                conditionalPanel(condition = "input.analysis_type == 'Beta Diversity'",
                                                 pickerInput(inputId = "beta_metric", label = "Beta Diversity Metric",
-                                                            choices = beta_diversity_metrics, selected = "bray_curtis"),
-                                                pickerInput(inputId = "gavage", label = "Treatment Group",
-                                                            choices = unique(metadata$gavage),
-                                                            selected = unique(metadata$gavage),
-                                                            multiple = TRUE))),
-                              
+                                                            choices = beta_diversity_metrics, selected = "bray_curtis")),
+                               
+                               ### Differential abundance dropdowns
+                               conditionalPanel(condition = "input.analysis_type == 'Differential Abundance'",
+                                                
+                                                # overview type
+                                                pickerInput(inputId = "diff_abun_view", label = "Overview Type",
+                                                            choices = c("Community Overview", "Individual Taxon"), selected = "Community Overview"),
+                                                
+                                                # community overview
+                                                conditionalPanel(condition = "input.diff_abun_view == 'Community Overview'",
+                                                                 
+                                                                 # choose method: top N or manual
+                                                                 radioButtons(inputId = "comm_taxa_method", label = "Select taxa by:",
+                                                                              choices = c("Top N Most Abundant Taxa" = "top_n", "Manual Selection" = "manual"),
+                                                                              selected = "top_n", inline = TRUE),
+                                                                 
+                                                                 # top N input (default in top 10)
+                                                                 conditionalPanel(condition = "input.comm_taxa_method == 'top_n'",
+                                                                                  numericInput(inputId = "top_n_taxa", label = "Select Number of Taxa to Display",
+                                                                                               value = 10, min = 1, max = 25, step = 1)),
+                                                                 
+                                                                 # manual taxon selection
+                                                                 conditionalPanel(condition = "input.comm_taxa_method == 'manual'",
+                                                                                  pickerInput(inputId = "comm_taxa_select", label = "Select Taxa to Display",
+                                                                                              choices = sort(unique(differential_abundance$gamm$data$taxon)), 
+                                                                                              selected = sort(unique(differential_abundance$gamm$data$taxon))[1:10], 
+                                                                                              multiple = TRUE, 
+                                                                                              options = list(`live-search` = TRUE, `max-options` = 25, `actions-box` = TRUE)))),
+                                                
+                                                # individual taxon
+                                                conditionalPanel(condition = "input.diff_abun_view == 'Individual Taxon'",
+                                                                 pickerInput(inputId = "taxon_select", label = "Choose Taxon",
+                                                                             choices = sort(unique(differential_abundance$gamm$data$taxon)), # TO UPDATE LATER (WHEN MODELS FINISHED)
+                                                                             options = list(`live-search` = TRUE)),
+                                                                 pickerInput(inputId = "model_type_indiv", label = "Model Type",
+                                                                             choices = c("GAMM"), selected = "GAMM")))),
+                  
                   mainPanel(
                     
-                    ### Alpha diversity tabs
-                    
-                    # LMM tabs
+                    ### Alpha diversity - LMM tabs 
                     conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity' && input.model_type == 'LMM'",
                                      tabsetPanel(tabPanel("Alpha Diversity Metric Over Time Plot", 
                                                           div(class = "tab-content-spacing",
@@ -87,7 +125,7 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                           plotOutput("lmm_resid_plot", height = 400), plotOutput("lmm_qq_plot", height = 400), plotOutput("lmm_resp_plot", height = 400))))),
                     
-                    # GAMM tabs
+                    ### Alpha diversity - GAMM tabs 
                     conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity' && input.model_type == 'GAMM'",
                                      tabsetPanel(tabPanel("Alpha Diversity Metric Over Time Plot",
                                                           div(class = "tab-content-spacing",
@@ -107,6 +145,12 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                           actionButton("info_gamm_model_summary", label = NULL, icon = icon("question-circle"), 
                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                               verbatimTextOutput("gamm_model_summary"))),
+                                                 tabPanel("Smooth Differences (GAMM)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Smooth Differences Plot (GAMM)", 
+                                                          actionButton("info_gamm_smooth_diff_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("gamm_smooth_diff_plot", height = 800))),
                                                  tabPanel("Model Diagnostics Plots (GAMM)", 
                                                           div(class = "tab-content-spacing",
                                                           h4("Model Diagnostics Plots (GAMM)", 
@@ -177,7 +221,64 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                           wellPanel(h5("Overall Permutation Test"), tableOutput("con_ord_overall")),
                                                           wellPanel(h5("Permutation Test by Term"), tableOutput("con_ord_terms")),
-                                                          wellPanel(h5("Permutation Test by Axis"), tableOutput("con_ord_axis"))))))
+                                                          wellPanel(h5("Permutation Test by Axis"), tableOutput("con_ord_axis")))))),
+                    
+                    
+                    ### Differential Abundance - Community Overview
+                    conditionalPanel(condition = "input.analysis_type == 'Differential Abundance' && input.diff_abun_view == 'Community Overview'",
+                                     tabsetPanel(tabPanel("Heatmap",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Heatmap", 
+                                                          actionButton("info_rel_abun_heatmap", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("rel_abun_heatmap", height = 400))),
+                                                tabPanel("Stacked Barplot",
+                                                         div(class = "tab-content-spacing",
+                                                         h4("Stacked Barplot", 
+                                                         actionButton("info_rel_abun_barplot", label = NULL, icon = icon("question-circle"), 
+                                                                      style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                         plotOutput("rel_abun_barplot", height = 400))))),
+                                     
+                    
+                    ### Differential Abundance - GAMM tabs 
+                    conditionalPanel(condition = "input.analysis_type == 'Differential Abundance' && input.diff_abun_view == 'Individual Taxon' && input.model_type_indiv == 'GAMM'",
+                                     tabsetPanel(tabPanel("Relative Abundance Over Time Plot",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Relative Abundance Over Time Plot", 
+                                                          actionButton("info_gamm_indiv_taxon_rel_abun_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("gamm_indiv_taxon_rel_abun_plot", height = 400))),
+                                                 tabPanel("Smooth Plot (GAMM)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Smooth Plot (GAMM)", 
+                                                          actionButton("info_gamm_indiv_taxon_smooth_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("gamm_indiv_taxon_smooth_plot", height = 400))),
+                                                 tabPanel("Model Summary (GAMM)",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Model Summary (GAMM)", 
+                                                          actionButton("info_gamm_indiv_taxon_model_summary", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          wellPanel(h5("Parametric Coefficients"), tableOutput("gamm_model_para_summary")),
+                                                          wellPanel(h5("Smooth Terms"), tableOutput("gamm_model_smooth_summary")))),
+                                                 tabPanel("Smooth Differences (GAMM)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Smooth Differences Plot (GAMM)", 
+                                                          actionButton("info_gamm_indiv_taxon_smooth_diff_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("gamm_indiv_taxon_smooth_diff_plot", height = 800))),
+                                                 tabPanel("Model Diagnostics Plots (GAMM)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Model Diagnostics Plots (GAMM)", 
+                                                          actionButton("info_gamm_indiv_taxon_resid_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("gamm_indiv_taxon_resid_plot", height = 400), plotOutput("gamm_indiv_taxon_qq_plot", height = 400), plotOutput("gamm_indiv_taxon_resp_plot", height = 400))),
+                                                 tabPanel("Concurvity (GAMM)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Concurvity (GAMM)", 
+                                                          actionButton("info_gamm_indiv_taxon_concurvity", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          tableOutput("gamm_indiv_taxon_concurvity"))))),
                   )
                 )
 )
@@ -185,24 +286,40 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
 ## Server
 server <- function(input, output, session) {
   
-  ### ALPHA DIVERSITY
+  ### define global color map for gavage group plots
+  gavage_levels <- sort(unique(metadata$gavage))
   
-  # filter for selected treatment groups
-  filtered_df <- reactive({
+  gavage_colors <- setNames(RColorBrewer::brewer.pal(n = length(gavage_levels), name = "Set1"),
+                            gavage_levels)
+  
+  
+  ### define global color map for gavage group plots
+  pair_levels <- unique(differential_abundance$gamm$smooth_diffs$pair)
+  
+  pair_colors <- setNames(RColorBrewer::brewer.pal(n = length(pair_levels), name = "Set1"),
+                          pair_levels)
+  
+  
+  ######################################################
+  ##########     ALPHA DIVERSITY ANALYSIS     ##########
+  ######################################################
+  
+  ### filter for selected gavage groups for alpha diversity plots
+  alpha_plot_df <- reactive({
     alpha_diversity$metrics %>%
       left_join(metadata, by = c("sample_name" = "sample_id")) %>%
-      filter(gavage %in% input$gavage)
+      filter(gavage %in% input$gavage_plot)
   })
-  
   
   ### Linear mixed effects model
   
   # plot alpha diversity metric over time (LMM)
   output$alpha_plot_lmm <- renderPlot({
-    ggplot(filtered_df(), aes(x = day, y = .data[[input$alpha_metric]], color = gavage)) +
+    ggplot(alpha_plot_df(), aes(x = day, y = .data[[input$alpha_metric]], color = gavage)) +
       geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
       stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
-      labs(y = input$alpha_metric, x = "Day")
+      scale_color_manual(values = gavage_colors, drop = FALSE) +
+      labs(y = input$alpha_metric, x = "Day", color = "Gavage")
   }) 
   
   # info pop-up for alpha diversity metric over time (LMM)
@@ -218,6 +335,7 @@ server <- function(input, output, session) {
           Thus, increasing evenness decreases the Simpson index. Abundant taxa have a large effect on the measure, whereas rare taxa contribute very little."),
         p(strong("Chao1:"), "Estimates total species richness. Chao1 infers the number of unseen species by using the observed counts of singletons and doubletons 
           and the assumption that individuals are randomly and independently sampled from the community."),
+        hr(),
         p(strong("Linear Mixed Model (LMM):"), "Models both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). LMMs can only model linear 
           relationships between predictors and the response."),
         p(strong("Generalized Additive Mixed Model (GAMM):"), "Models both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). 
@@ -253,6 +371,7 @@ server <- function(input, output, session) {
         title = "How to Read the ANOVA Table",
         p("The ANOVA tests whether each term in the model explain variation in the response after accounting 
           for all other terms in the model (i.e., if a term is removed from the full model, does the model ger significanlty worse?)."),
+        hr(),
         p(strong("Sum Sq (Sum of squares):"), "Total variance explained by that term, after accounting for all other fixed effects."),
         p(strong("Mean Sq (Sum Sq divided by NumDF):"), "Variance explained per degree of freedom."),
         p(strong("NumDf (Numerator degrees of freedom):"), "How many parameters are being tested for that term."),
@@ -360,6 +479,7 @@ server <- function(input, output, session) {
         p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
         p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
         p(strong("Extreme outliers:"), "Influential points or possible errors."),
+        hr(),
         p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
           Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
           If residuals are not normal, p-values and confidence intervals may be unreliable."),
@@ -367,6 +487,7 @@ server <- function(input, output, session) {
         p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
         p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
         p(strong("Large deviations at the ends:"), "Potential outliers."),
+        hr(),
         p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
           captures the overall trends in the data and whether there are systematic deviations."),
         p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
@@ -384,10 +505,11 @@ server <- function(input, output, session) {
   
   # plot alpha diversity metric over time (GAMM)
   output$alpha_plot_gamm <- renderPlot({
-    ggplot(filtered_df(), aes(x = day, y = .data[[input$alpha_metric]], color = gavage)) +
+    ggplot(alpha_plot_df(), aes(x = day, y = .data[[input$alpha_metric]], color = gavage)) +
       geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
       stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
-      labs(y = input$alpha_metric, x = "Day")
+      scale_color_manual(values = gavage_colors, drop = FALSE) +
+      labs(y = input$alpha_metric, x = "Day", color = "Gavage")
   }) 
   
   # info pop-up for alpha diversity metric over time (gamm)
@@ -403,6 +525,7 @@ server <- function(input, output, session) {
           Thus, increasing evenness decreases the Simpson index. Abundant taxa have a large effect on the measure, whereas rare taxa contribute very little."),
         p(strong("Chao1:"), "Estimates total species richness. Chao1 infers the number of unseen species by using the observed counts of singletons and doubletons 
           and the assumption that individuals are randomly and independently sampled from the community."),
+        hr(),
         p(strong("Linear Mixed Model (LMM):"), "Models both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). LMMs can only model linear 
           relationships between predictors and the response."),
         p(strong("Generalized Additive Mixed Model (GAMM):"), "Models both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). 
@@ -418,10 +541,12 @@ server <- function(input, output, session) {
   output$gamm_smooth_plot <- renderPlot({
     smooth_df <- alpha_diversity$models[[input$alpha_metric]]$gamm$smooth_df
     ggplot() + theme_minimal() +
-      geom_point(data = filtered_df(), aes(x = day, y = .data[[input$alpha_metric]], color = gavage), alpha = 0.4) +
+      geom_point(data = alpha_plot_df(), aes(x = day, y = .data[[input$alpha_metric]], color = gavage), alpha = 0.4) +
       geom_line(data = smooth_df, aes(x = day, y = fit, color = gavage), linewidth = 1) +
-      geom_ribbon(data = smooth_df, aes(day, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
-      labs(y = input$alpha_metric, x = "Day")
+      geom_ribbon(data = smooth_df, aes(x = day, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+      scale_color_manual(values = gavage_colors, drop = FALSE) +
+      scale_fill_manual(values = gavage_colors, drop = FALSE) +
+      labs(y = input$alpha_metric, x = "Day", color = "Gavage", fill = "Gavage")
   })
   
   # info pop-up for smooths plot
@@ -463,7 +588,7 @@ server <- function(input, output, session) {
     model <- alpha_diversity$models[[input$alpha_metric]]$gamm$model$gam
     plot(fitted(model), alpha_diversity$metrics[[input$alpha_metric]],
          ylab = "Response", xlab = "Fitted Values",
-         main = "GAMM Response vs Fitted Values")
+         main = "GAMM Response vs Fitted Values Plot")
     abline(a = 0, b = 1, lty = 2)
   })
     
@@ -479,6 +604,7 @@ server <- function(input, output, session) {
         p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
         p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
         p(strong("Extreme outliers:"), "Influential points or possible errors."),
+        hr(),
         p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
           Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
           If residuals are not normal, p-values and confidence intervals may be unreliable."),
@@ -486,6 +612,7 @@ server <- function(input, output, session) {
         p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
         p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
         p(strong("Large deviations at the ends:"), "Potential outliers."),
+        hr(),
         p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
           captures the overall trends in the data and whether there are systematic deviations."),
         p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
@@ -511,7 +638,7 @@ server <- function(input, output, session) {
         title = "How to Interpret the GAMM Summary",
         p(strong("Family:"), "Distribution used when modelling."),
         p(strong("Link function:"), "Whether the data was transformed. Identity = no transformation"),
-        p(strong("Parametric coefficients:"), "Represent the linear (fixed) effects in the model. Each group term is the linear difference from the reference group."),
+        p(strong("Parametric coefficients:"), "Represent the linear (fixed) effects in the model. Each group term is the linear difference from the reference group averaged over time."),
         p(strong("Smooth terms:"), "Indicates whether adding nonlinearity significantly improves the model for a given group."),
         p(strong("edf (effective degrees of freedom:"), "How wiggly the smooth is. > 1 = some nonlinearity"),
         p(strong("R-sq. (adj):"), "Proportion of the variance explained by the model."),
@@ -522,17 +649,43 @@ server <- function(input, output, session) {
   })
   
   
+  # GAMM smooth difference plots 
+  output$gamm_smooth_diff_plot <- renderPlot({ 
+    smooth_diff_plot_df <- alpha_diversity$models[[input$alpha_metric]]$gamm$smooth_diff 
+    draw(smooth_diff_plot_df) & 
+      scale_x_continuous(name = "Day")
+  })
+  
+  
+  # info pop-up for the GAMM smooth differences plots
+  observeEvent(input$info_gamm_smooth_diff_plot, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the GAMM Smooth Differences Plots",
+        p("These plots show the pairwise differences between the estimated smooth trajectories of the selected taxon of the selected alpha 
+        diversity metrics for each gavage group (i.e., whether and when one group differs significantly from another over time.)"),
+        p(strong("Positive values:"), "The first group in the comparison has higher CLR abundance than the second group at that timepoint."),
+        p(strong("Negative values:"), "The first group in the comparison has lower CLR abundance than the second group at that timepoint."),
+        p(strong("Shaded regions:"), "Indicate 95% confidence intervals for the differences. If the shaded region does not overlap zero, then 
+          the difference is statistically significant at that timepoint."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+ 
   # GAMM concurvity
   output$gamm_concurvity <- renderTable({
     df <- as.data.frame(alpha_diversity$models[[input$alpha_metric]]$gamm$concurvity)
     
     # format table
     df_formatted <- df %>%
+      tibble::rownames_to_column("Measure") %>%
       mutate(para = format(round(para, 2), nsmall = 2),
-             `s(day):gavageG_1DMD` = formatC(`s(day):gavageG_1DMD`, format = "e", digits = 4),
-             `s(day):gavageG_4DMD` = formatC(`s(day):gavageG_4DMD`, format = "e", digits = 4),
-             `s(day):gavageG_4W7C` = formatC(`s(day):gavageG_4W7C`, format = "e", digits = 4),
-             `s(day):gavageG_4WMD` = formatC(`s(day):gavageG_4WMD`, format = "e", digits = 4))
+             `s(day_c):gavageG_1DMD` = formatC(`s(day_c):gavageG_1DMD`, format = "e", digits = 4),
+             `s(day_c):gavageG_4DMD` = formatC(`s(day_c):gavageG_4DMD`, format = "e", digits = 4),
+             `s(day_c):gavageG_4W7C` = formatC(`s(day_c):gavageG_4W7C`, format = "e", digits = 4),
+             `s(day_c):gavageG_4WMD` = formatC(`s(day_c):gavageG_4WMD`, format = "e", digits = 4))
     
     df_formatted
   })
@@ -545,6 +698,8 @@ server <- function(input, output, session) {
         p("How much redundancy or linear dependence exists in the model (i.e., how much one term can explain another term). 
         If two terms are highly dependendent, it is hard for the model to separate their effects. 
         0 = no redundancy, > 0.5 = moderate redundancy, and > 0.9 = very high redundancy."),
+        p(strong("Measure:"), "worst = maximum concurvity for the term across all other terms, observed = concurvity calculated 
+          directly from the fitted model, and estimate = smoothed/adjusted estimate of concurvity."),
         p(strong("para:"), "The parametric coefficients (see Model Summary (GAMM))."),
         p(strong("s(day):gavage...:"), "The smooth terms/group-specific nonlinear trends over time (see Model Summary (GAMM))."),
         easyClose = TRUE,
@@ -554,12 +709,15 @@ server <- function(input, output, session) {
   })
   
   
-  ### BETA DIVERSITY
+  ######################################################
+  ##########      BETA DIVERSITY ANALYSIS     ##########
+  ######################################################
   
-  # filter for selected treatment groups
-  beta_meta_filtered <- reactive({
-    metadata %>% filter(gavage %in% input$gavage)
+  ### filter for selected gavage groups for beta diversity plots
+  beta_plot_meta <- reactive({
+    metadata %>% filter(gavage %in% input$gavage_plot) 
   })
+  
   
   # reactive data.frame for PCoA plot
   beta_pcoa_df <- reactive({
@@ -568,8 +726,11 @@ server <- function(input, output, session) {
     df <- as.data.frame(ord$vectors) # extract coordinates
     df$sample_id <- rownames(df)
     
+    # filter df to only include sample_ids that are in the filtered metadata
+    df <- df %>% filter(sample_id %in% beta_plot_meta()$sample_id)
+    
     # merge with filtered metadata
-    df <- left_join(df, beta_meta_filtered(), by = "sample_id")
+    df <- left_join(df, beta_plot_meta(), by = "sample_id")
     
     # compute variance explained
     var_explained <- ord$values$Relative_eig * 100
@@ -598,8 +759,10 @@ server <- function(input, output, session) {
       geom_point(aes(x = Axis.1, y = Axis.2, fill = gavage, size = day_factor), 
                  shape = 21, stroke = 0, alpha = 0.35) +
       stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
-      scale_fill_discrete(guide = "none") +
-      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      # ellipses assume multivariate normality and are thus only provided for visualization
+      scale_color_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_fill_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4), name = "Day") +
       xlab(paste0("PC1 (", round(pcoa_data$var_explained[1], 1), "%)")) +
       ylab(paste0("PC2 (", round(pcoa_data$var_explained[2], 1), "%)")) +
       theme_minimal()
@@ -638,8 +801,11 @@ server <- function(input, output, session) {
     df <- as.data.frame(ord$points) # extract coordinates
     df$sample_id <- rownames(df)
     
+    # filter df to only include sample_ids that are in the filtered metadata
+    df <- df %>% filter(sample_id %in% beta_plot_meta()$sample_id)
+    
     # merge with filtered metadata
-    df <- left_join(df, beta_meta_filtered(), by = "sample_id")
+    df <- left_join(df, beta_plot_meta(), by = "sample_id")
     
     # compute centroids per gavage x day
     df_centroids <- df %>%
@@ -655,6 +821,7 @@ server <- function(input, output, session) {
   # NMDS plot
   output$nmds_plot <- renderPlot({
     
+    # only allow non-Euclidean distance metrics to be used for NMDS plot
     metric <- input$beta_metric
     ord <- beta_diversity[[metric]]$ordination$nmds
     
@@ -662,9 +829,7 @@ server <- function(input, output, session) {
       need(!is.null(ord),
            "NMDS is only available for non-Euclidean distance metrics (Bray-Curtis, Jaccard and Canberra). Euclidean distances have closed-form ordination solutions (i.e., PCA), so applying an iterative, rank-based method like NMDS would unnecessarily discard metric and variance information."))
     
-    nmds_data <- beta_nmds_df()
-    
-    # add stress subtitle
+    # add stress tests subtitle
     stress_value  <- ord$stress 
     
     # define a simple interpretation
@@ -682,6 +847,7 @@ server <- function(input, output, session) {
     
     stress_text <- paste0("stress = ", round(stress_value, 4), " (", stress_label, ")")
     
+    nmds_data <- beta_nmds_df()
     
     ggplot(nmds_data$df, aes(x = MDS1, y = MDS2)) +
       geom_path(data = nmds_data$df_centroids,
@@ -692,8 +858,10 @@ server <- function(input, output, session) {
       geom_point(aes(x = MDS1, y = MDS2, fill = gavage, size = day_factor), 
                  shape = 21, stroke = 0, alpha = 0.35) +
       stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
-      scale_fill_discrete(guide = "none") +
-      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      # ellipses assume multivariate normality and are thus only provided for visualization
+      scale_color_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_fill_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4), name = "Day") +
       labs(subtitle = stress_text) +
       xlab("NMDS1") + ylab("NMDS2") + theme_minimal()
   })
@@ -732,8 +900,11 @@ server <- function(input, output, session) {
     df <- as.data.frame(ord$x) # extract coordinates
     df$sample_id <- rownames(df)
     
+    # filter df to only include sample_ids that are in the filtered metadata
+    df <- df %>% filter(sample_id %in% beta_plot_meta()$sample_id)
+    
     # merge with filtered metadata
-    df <- left_join(df, beta_meta_filtered(), by = "sample_id")
+    df <- left_join(df, beta_plot_meta(), by = "sample_id")
     
     # compute variance explained
     var_explained <- round(100 * summary(ord)$importance[2, 1:2], 1) # extract percentage of variance explained
@@ -751,6 +922,8 @@ server <- function(input, output, session) {
   
   # PCA plot
   output$pca_plot <- renderPlot({
+    
+    # only allow Euclidean distance metrics to be used for PCA plot
     metric <- input$beta_metric
     ord <- beta_diversity[[metric]]$ordination$pca
 
@@ -769,8 +942,10 @@ server <- function(input, output, session) {
       geom_point(aes(x = PC1, y = PC2, fill = gavage, size = day_factor), 
                  shape = 21, stroke = 0, alpha = 0.35) +
       stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
-      scale_fill_discrete(guide = "none") +
-      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      # ellipses assume multivariate normality and are thus only provided for visualization
+      scale_color_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_fill_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4), name = "Day") +
       xlab(paste0("PC1 (", round(pca_data$var_explained[1], 1), "%)")) +
       ylab(paste0("PC2 (", round(pca_data$var_explained[2], 1), "%)")) +
       theme_minimal()
@@ -971,8 +1146,11 @@ server <- function(input, output, session) {
     cap_df <- as.data.frame(scores(con, display = "sites")) # get CAP coordinates
     cap_df$sample_id <- rownames(cap_df)
 
+    # filter cap_df to only include sample_ids that are in the filtered metadata
+    cap_df <- cap_df %>% filter(sample_id %in% beta_plot_meta()$sample_id)
+    
     # merge with filtered metadata
-    cap_df <- left_join(cap_df, beta_meta_filtered(), by = "sample_id")
+    cap_df <- left_join(cap_df, beta_plot_meta(), by = "sample_id")
     
     # compute variance explained
     var_explained <- con$CCA$eig / sum(con$tot.chi) * 100
@@ -1007,8 +1185,10 @@ server <- function(input, output, session) {
       geom_point(aes(fill = gavage, size = day_factor), 
                  shape = 21, stroke = 0, alpha = 0.35) +
       stat_ellipse(aes(color = gavage, group = gavage), type = "norm", level = 0.95, linewidth = 0.5) +
-      scale_fill_discrete(guide = "none") +
-      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4)) +
+      # ellipses assume multivariate normality and are thus only provided for visualization
+      scale_color_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_fill_manual(values = gavage_colors, drop = TRUE, name = "Gavage") +
+      scale_size_manual(values = c("7" = 1, "14" = 2, "21" = 3, "28" = 4), name = "Day") +
       xlab(paste0("CAP1 (", round(con_ord_data$var_explained[1], 1), "%)")) +
       ylab(paste0("CAP2 (", round(con_ord_data$var_explained[2], 1), "%)")) +
       theme_minimal()
@@ -1023,6 +1203,7 @@ server <- function(input, output, session) {
         p("Unlike unconstrained methods (e.g., PCoA, NMDS or PCA), the ordination axes are restricted to linear combinations of the experimental variables (the percentage of variance on each axis reflects 
           the proportion of variation explained by the experimental variables). Thus constrained ordination is particularly useful for assessing how much variation in microbiome composition can be explained by these variables"), 
         p("Constrained ordiantion can be used with both Euclidean and non-Euclidean distance metrics."),
+        hr(),
         p(strong("Bray-Curtis distance:"), "Measures the compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
           It is computed as the weighted sum of absolute differences, where weights are the abundances, thus the metric is dominated by abundant taxa."),
         p(strong("Canberra distance:"), "Measures compositional dissimilarity between two samples based on the abundances of taxa present in at least one of the samples. 
@@ -1127,6 +1308,407 @@ server <- function(input, output, session) {
         is used with non-Euclidean distance matrices to approximate variance, since variance is not well-defined in non-Euclidean space (distances don't obey Euclidean rules/Pythagoras’ theorem)."),
         p(strong("F:"), "F-statistic from permutation testing (ratio of signal to noise)."),
         p(strong("Pr(>F):"), "Permutation-based p-value."),
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  ##############################################################
+  ##########      DIFFERENTIAL ABUNDANCE ANALYSIS     ##########
+  ##############################################################
+  
+  # filter for top N taxa or manually selected taxa
+  selected_taxa <- reactive({
+    
+    df <- differential_abundance$comm_over
+    
+    if (input$comm_taxa_method == "top_n") {
+      
+      # top N most abundant taxa 
+      df_taxa <- df %>%
+        group_by(OTU) %>%
+        summarize(mean_abundance = mean(abundance), .groups = "drop") %>%
+        arrange(desc(mean_abundance)) %>%
+        slice_head(n = input$top_n_taxa) %>%
+        pull(OTU)
+      
+    } else if (input$comm_taxa_method == "manual") {
+      
+      # manually selected taxa
+      df_taxa <- input$comm_taxa_select
+    }
+    
+    df_taxa
+  })
+  
+  
+  # format matrix and plot heatmap
+  output$rel_abun_heatmap <- renderPlot({
+    
+    heat_mat <- differential_abundance$comm_over %>%
+      filter(gavage %in% input$gavage_plot) %>%
+      filter(OTU %in% selected_taxa()) %>%
+      group_by(gavage_day, OTU) %>%
+      summarise(abundance = mean(abundance), .groups = "drop") %>% 
+      pivot_wider(names_from = gavage_day, values_from = abundance, values_fill = 0) %>%
+      column_to_rownames("OTU") %>%
+      as.matrix()
+    
+    pheatmap(heat_mat, scale = "row", cluster_cols = FALSE,
+             clustering_distance_rows = "euclidean",
+             clustering_method = "complete")
+    
+  })
+  
+  
+  # data.frame for stacked barplot
+  bar_df <- reactive({
+    df <- differential_abundance$comm_over %>%
+      filter(gavage %in% input$gavage_plot) %>%
+      mutate(plot_taxa = ifelse(OTU %in% selected_taxa(), OTU, "Other")) 
+    
+    # set factor levels
+    df$plot_taxa <- factor(df$plot_taxa, levels = c(selected_taxa(), "Other"))
+    
+    # group and summarise by abundance
+    df %>%
+      group_by(gavage, day, day_factor, gavage_day, plot_taxa) %>%
+      summarise(abundance = sum(abundance), .groups = "drop")
+  })
+  
+  # reactive colors for stacked barplot
+  base_colors <- c("#862185", "#009E73", "#88CCEE", "#CC6677", "#D55E00", 
+                   "#44AA99", "#332288", "#E69F00", "#0072B2", "#AA4499",
+                   "#F0E442", "#117733", "#DB72FB", "#619CFF", "#882255")
+  
+  fill_colors <- reactive({
+    taxa_levels <- levels(bar_df()$plot_taxa)
+    
+    # all levels except Other
+    selected_levels <- taxa_levels[taxa_levels != "Other"]
+    
+    # assign base_colors sequentially (cycle if more taxa than colors)
+    cols <- rep(base_colors, length.out = length(selected_levels))
+    names(cols) <- selected_levels
+    
+    # Other is gray
+    c(cols, Other = "#999999")
+  })
+  
+  # plot stacked barplot
+  output$rel_abun_barplot <- renderPlot({
+    ggplot(bar_df(), aes(x = gavage_day, y = abundance, fill = plot_taxa)) +
+      geom_col() + theme_minimal() +
+      scale_fill_manual(values = fill_colors(), name = "Taxa") +
+      labs(x = "Gavage Group and Day", y = "Mean Relative Abundance") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+  })
+  
+ 
+  ### relative abundance over time
+  
+  # filter for selected gavage groups for relative abundance plot
+  rel_abun_plot_df <- reactive({
+    differential_abundance$rel_abun %>%
+      filter(gavage %in% input$gavage_plot) # gavage already in differential_abundance$rel_abun
+  })
+  
+  # relative abundance over time plot
+  output$gamm_indiv_taxon_rel_abun_plot <- renderPlot({
+    
+    plot_df <- rel_abun_plot_df() %>% filter(taxon == input$taxon_select)
+    ggplot(plot_df, aes(x = day, y = mean_abundance, color = gavage, group = gavage, fill = gavage)) +
+      geom_line() + geom_point() + theme_minimal() +
+      geom_ribbon(aes(ymin = mean_abundance - sem, ymax = mean_abundance + sem), alpha = 0.2, color = NA) +
+      scale_color_manual(values = gavage_colors, drop = FALSE) +
+      scale_fill_manual(values = gavage_colors, drop = FALSE) +
+      labs(x = "Day", y = "Mean Relative Abundance", color = "Gavage", fill = "Gavage")
+  })
+  
+ 
+  # info pop-up for relative abundance over time plot
+  observeEvent(input$info_gamm_indiv_taxon_rel_abun_plot, {
+    showModal(
+      modalDialog(
+        title = "Relative Abundance of Individual Taxon Over Time",
+        p("Plot of the mean relative abundance of the selected taxon over time for each gavage group. 
+          Shaded ribbons represent the standard error of the mean (SEM)."),
+        p(strong(":"), "."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+ 
+  
+  ### generalized additive mixed model
+  
+  # filter for selected gavage groups for differential abundance smooth plot
+  diff_abun_plot_df <- reactive({
+    differential_abundance$gamm$data %>%
+      filter(gavage %in% input$gavage_plot) # gavage already in differential_abundance$gamm$data
+  })
+  
+  # GAMM smooth plots
+  output$gamm_indiv_taxon_smooth_plot <- renderPlot({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    plot_df <- diff_abun_plot_df() %>% filter(taxon == input$taxon_select)
+    smooth_df <- differential_abundance$gamm$models[[input$taxon_select]]$smooth_pred
+    ggplot() + theme_minimal() +
+      geom_point(data = plot_df, aes(x = day, y = abundance, color = gavage), alpha = 0.4) +
+      geom_line(data = smooth_df, aes(x = day, y = fit, color = gavage), linewidth = 1) +
+      geom_ribbon(data = smooth_df, aes(x = day, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+      scale_color_manual(values = gavage_colors, drop = FALSE) +
+      scale_fill_manual(values = gavage_colors, drop = FALSE) +
+      labs(y = input$taxon_select, x = "Day", color = "Gavage", fill = "Gavage")
+  })
+  
+  # info pop-up for smooths plot
+  observeEvent(input$info_gamm_indiv_taxon_smooth_plot, {
+    showModal(
+      modalDialog(
+        title = "GAMM-estimated Smooths Over Time",
+        p("Plot of the CLR-transformed abundance of the selected taxon over time for each sample. Lines represent the estimated smooth 
+        trajectories from the GAMM (the temporal trend for each group on the CLR scale). Shaded ribbons represent 95% confidence intervals."),
+        p("Generalized Additive Mixed Models model both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). 
+          GAMMs allow non-linear relationships between predictors and the response via smooth functions (splines)."),
+        p(strong("GAMM-estimated smooth trajectories:"), "Estimate the relationship between a predictor and a response without assuming a fixed parametric form. 
+          Smooths are penalized and therefore only allow curvature if the data strongly supports it."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+
+  
+  # gamm model summary - parametric coefficients
+  output$gamm_model_para_summary <- renderTable({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    df <- model_obj$summary_param
+    
+    # format table
+    df_formatted <- df %>% 
+      mutate(estimate = format(round(estimate, 4), nsmall = 4),
+             std_error = format(round(std_error, 4), nsmall = 4),
+             t_value = format(round(t_value, 4), nsmall = 4),
+             p_value = formatC(p_value, format = "e", digits = 4),
+             p_adj = formatC(p_adj, format = "e", digits = 4)) %>%
+      select(term, estimate, std_error, t_value, p_value, p_adj)
+    
+    df_formatted
+  })
+  
+  # gamm model summary - smooths
+  output$gamm_model_smooth_summary <- renderTable({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    df <- model_obj$summary_smooth
+    
+    # format table
+    df_formatted <- df %>% 
+      mutate(edf = format(round(edf, 4), nsmall = 4),
+             ref_df = format(round(ref_df, 4), nsmall = 4),
+             F_value = format(round(F_value, 4), nsmall = 4),
+             p_value = formatC(p_value, format = "e", digits = 4),
+             p_adj = formatC(p_adj, format = "e", digits = 4)) %>%
+      select(smooth, edf, ref_df, F_value, p_value, p_adj)
+    
+    df_formatted
+  })
+  
+  # info pop-up for the GAMM summary (parametric coefficients and smooths)
+  observeEvent(input$info_gamm_indiv_taxon_model_summary, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the GAMM Summary",
+        p(strong("Parametric coefficients:"), "Represent the linear (fixed) effects in the model. Each group term is the linear difference from the reference group averaged over time."),
+        p(strong("estimate"), "Estimated effect size (difference in CLR-transformed abundance relative to the reference group)."),
+        p(strong("std_error"), "Uncertainty of the estimated effect size."),
+        p(strong("t_value"), "Test statistic for the parametric effect (estimate divided by the standard error)."),
+        hr(),
+        p(strong("Smooth terms:"), "Indicates whether adding nonlinearity significantly improves the model for a given group."),
+        p(strong("edf (effective degrees of freedom:"), "How wiggly the smooth is. > 1 = some nonlinearity"),
+        p(strong("ref_df"), "Reference degrees of freedom used for significance testing of the smooth."),
+        p(strong("F_value:"), "Test statistic assessing whether the smooth explains significant variation over time."),
+        hr(),
+        p(strong("p_value/p_adj"), "Significance before and after mutliple-testing correction (BH)."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # filter for taxon for GAMM smooth differences plots
+  smooth_diff_indiv_taxon_plot_df <- reactive({
+    differential_abundance$gamm$smooth_diff %>%
+      filter(taxon == input$taxon_select)
+  })
+  
+  # plot GAMM pairwise smooth differences
+  output$gamm_indiv_taxon_smooth_diff_plot <- renderPlot({
+    draw(smooth_diff_indiv_taxon_plot_df()) &
+      scale_x_continuous(name = "Day")
+  })
+  
+  # info pop-up for the GAMM smooth differences plots
+  observeEvent(input$info_gamm_indiv_taxon_smooth_diff_plot, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the GAMM Smooth Differences Plots",
+        p("These plots show the pairwise differences between the estimated smooth trajectories of the selected taxon for each gavage group. 
+        (i.e., whether and when one group differs significantly from another over time on the CLR-transformed scale.)"),
+        p(strong("Positive values:"), "The first group in the comparison has higher CLR abundance than the second group at that timepoint."),
+        p(strong("Negative values:"), "The first group in the comparison has lower CLR abundance than the second group at that timepoint."),
+        p(strong("Shaded regions:"), "Indicate 95% confidence intervals for the differences. If the shaded region does not overlap zero, then 
+          the difference is statistically significant at that timepoint."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # plot GAMM residuals plot
+  output$gamm_indiv_taxon_resid_plot <- renderPlot({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    model <- model_obj$model$gam
+    plot(fitted(model), resid(model),
+         ylab = "Residuals", xlab = "Fitted Values",
+         main = paste0("GAMM Residuals vs Fitted Values Plot: ", input$taxon_select))
+    abline(h = 0, lty = 2)
+  })
+  
+  # plot GAMM normal Q-Q plot
+  output$gamm_indiv_taxon_qq_plot <- renderPlot({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    res <- model_obj$residuals
+    qqnorm(res, 
+           ylab = "Deviance Residuals", xlab = "Theoretical Quantiles",
+           main = paste0("GAMM Normal Q-Q Plot: ", input$taxon_select))
+    qqline(res)
+  })
+  
+  
+  # plot GAMM response plot
+  output$gamm_indiv_taxon_resp_plot <- renderPlot({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    model <- model_obj$model$gam
+    plot_df <- diff_abun_plot_df() %>% filter(taxon == input$taxon_select)
+    plot(fitted(model), plot_df$abundance,
+         ylab = "CLR Abundance", xlab = "Fitted Values",
+         main = paste0("GAMM Response vs Fitted Values Plot: ", input$taxon_select))
+    abline(a = 0, b = 1, lty = 2)
+  })
+  
+  # info pop-up for GAM residuals vs fitted plot, normal Q-Q plot and response vs fitted plot
+  observeEvent(input$info_gamm_indiv_taxon_resid_plot, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the Residuals vs Fitted Values Plot, the Normal Q-Q Plot and the Response vs Fitted Values Plot",
+        p("The Residuals versus Fitted Values plot is used to check whether the statistical model is appropriate for the data by checking whether the remaining errors (residuals) are random 
+          or if they show structure the model failed to capture. The points should be randomly scattered around zero (i.e., no clear pattern or trend)."),
+        p(strong("Curved pattern:"), "Model failed to capture nonlinear strucutre in the mean (e.g., missing interaction)."),
+        p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
+        p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
+        p(strong("Extreme outliers:"), "Influential points or possible errors."),
+        hr(),
+        p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
+          Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
+          If residuals are not normal, p-values and confidence intervals may be unreliable."),
+        p(strong("Points lie on a straight 45° line:"), "Residuals are approximately normally distributed."),
+        p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
+        p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
+        p(strong("Large deviations at the ends:"), "Potential outliers."),
+        hr(),
+        p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
+          captures the overall trends in the data and whether there are systematic deviations."),
+        p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
+        p(strong("Points systematically above or below the line:"), "The model under- or over-predicts in certain ranges."),
+        p(strong("Nonlinear patterns or curves:"), "The model may be missing key nonlinear effects or interactions."),
+        p(strong("Large scatter or wide spread around the line:"), "High residual variance; model may not explain much of the variation."),
+        p(strong("Clusters or gaps:"), "Indicates group-specific effects or unmodeled structure in the data."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # GAMM concurvity
+  output$gamm_indiv_taxon_concurvity <- renderTable({
+    
+    # check if model fit without error
+    model_obj <- differential_abundance$gamm$models[[input$taxon_select]]
+    
+    validate(
+      need(model_obj$success,
+           paste0("GAMM failed to fit for ", input$taxon_select)))
+    
+    df <- as.data.frame(model_obj$concurvity)
+    
+    # format table
+    df_formatted <- df %>% 
+      tibble::rownames_to_column("Measure") %>%
+      mutate(para = format(round(para, 2), nsmall = 2),
+             `s(day_c):gavageG_1DMD` = formatC(`s(day_c):gavageG_1DMD`, format = "e", digits = 4),
+             `s(day_c):gavageG_4DMD` = formatC(`s(day_c):gavageG_4DMD`, format = "e", digits = 4),
+             `s(day_c):gavageG_4W7C` = formatC(`s(day_c):gavageG_4W7C`, format = "e", digits = 4),
+             `s(day_c):gavageG_4WMD` = formatC(`s(day_c):gavageG_4WMD`, format = "e", digits = 4))
+    
+    df_formatted
+  })
+  
+  # info pop-up for concurvity table
+  observeEvent(input$info_gamm_indiv_taxon_concurvity, {
+    showModal(
+      modalDialog(
+        title = "How to Read the Concurvity Table",
+        p("How much redundancy or linear dependence exists in the model (i.e., how much one term can explain another term). 
+        If two terms are highly dependendent, it is hard for the model to separate their effects. 
+        0 = no redundancy, > 0.5 = moderate redundancy, and > 0.9 = very high redundancy."),
+        p(strong("Measure:"), "worst = maximum concurvity for the term across all other terms, observed = concurvity calculated 
+          directly from the fitted model, and estimate = smoothed/adjusted estimate of concurvity."),
+        p(strong("para:"), "The parametric coefficients (see Model Summary (GAMM))."),
+        p(strong("s(day):gavage...:"), "The smooth terms/group-specific nonlinear trends over time (see Model Summary (GAMM))."),
         easyClose = TRUE,
         footer = modalButton("Close")
       )
