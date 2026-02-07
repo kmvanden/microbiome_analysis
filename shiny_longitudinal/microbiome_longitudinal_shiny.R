@@ -56,7 +56,6 @@ alpha_diversity_metrics$Chao1 <- estimate_richness(ps, measures = "Chao1")$Chao1
 alpha_diversity_metrics$Observed <- estimate_richness(ps_rarefied, measures = "Observed")$Observed # add Observed to alpha_diversity_metrics
 alpha_diversity_metrics$sample_name <- rownames(alpha_diversity_metrics) # add column with sample names
 alpha_div_df <- left_join(alpha_diversity_metrics, meta, by = c("sample_name" = "sample_id")) # merge phyloseq object with metadata (for plotting and statistical tests) 
-alpha_div_df <- alpha_div_df %>% mutate(day_c = day - mean(day)) # center day (day zero does not exist)
 
 
 ### linear mixed effects models
@@ -77,7 +76,7 @@ fit_lmm <- function(metric, data = data) {
 fit_gamm <- function(metric, data) {
   
   data$gavage <- as.factor(data$gavage)
-  formula <- as.formula(paste0(metric, " ~ gavage + s(day_c, by = gavage, bs = 'fs', k = 4)"))
+  formula <- as.formula(paste0(metric, " ~ gavage + s(day, by = gavage, bs = 'fs', k = 4)"))
   gamm_obj <- mgcv::gamm(formula, random = list(mouse_id = ~1), data = data)
   
   # precompute residuals
@@ -87,12 +86,11 @@ fit_gamm <- function(metric, data) {
   conc <- mgcv::concurvity(gamm_obj$gam, full = TRUE)
   
   # precompute pairwise smooth differences
-  smooth_diff <- difference_smooths(gamm_obj$gam, select = "s(day_c)") %>%
-    mutate(metric = metric, .before = 1) %>%
-    mutate(day_c = day_c + mean(data$day)) # to have day for plotting
+  smooth_diff <- difference_smooths(gamm_obj$gam, select = "s(day)") %>%
+    mutate(metric = metric, .before = 1) 
   
   # precompute smooth predictions for plotting
-  smooth_df <- expand.grid(day_c = seq(min(data$day_c), max(data$day_c), length = 200),
+  smooth_df <- expand.grid(day = seq(min(data$day), max(data$day), length = 200),
                            gavage = levels(data$gavage))
   
   # predict smooths
@@ -102,9 +100,6 @@ fit_gamm <- function(metric, data) {
   smooth_df$fit <- pred$fit
   smooth_df$upper <- pred$fit + 2 * pred$se.fit
   smooth_df$lower <- pred$fit - 2 * pred$se.fit
-  
-  # add day to smooth_df
-  smooth_df$day <- smooth_df$day_c + mean(data$day)
   
   # list to store
   list(model = gamm_obj,
@@ -366,9 +361,6 @@ df_long <- feat_long %>%
 # convert gavage to factor
 df_long$gavage <- as.factor(df_long$gavage)
 
-# center day (day zero does not exist)
-df_long <- df_long %>% mutate(day_c = day - mean(day))
-
 
 ### function for generalized additive mixed model
 fit_gamm_taxon <- function(taxon_name, data) {
@@ -377,7 +369,7 @@ fit_gamm_taxon <- function(taxon_name, data) {
   df_taxon <- data %>% filter(taxon == taxon_name)
   
   out <- tryCatch({
-  gamm_obj <- mgcv::gamm(abundance ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+  gamm_obj <- mgcv::gamm(abundance ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                          random = list(mouse_id = ~1),
                          data = df_taxon)
   
@@ -388,9 +380,8 @@ fit_gamm_taxon <- function(taxon_name, data) {
   conc <- mgcv::concurvity(gamm_obj$gam, full = TRUE)
   
   # precompute pairwise smooth differences
-  smooth_diff <- difference_smooths(gamm_obj$gam, select = "s(day_c)") %>%
-    mutate(taxon = taxon_name, .before = 1) %>%
-    mutate(day_c = day_c + mean(df_taxon$day)) # to have day for plotting
+  smooth_diff <- difference_smooths(gamm_obj$gam, select = "s(day)") %>%
+    mutate(taxon = taxon_name, .before = 1) 
   
   # precompute summary
   sum <- summary(gamm_obj$gam)
@@ -415,7 +406,7 @@ fit_gamm_taxon <- function(taxon_name, data) {
   
     
   ### precompute smooth predictions for plotting
-  smooth_pred <- expand.grid(day_c = seq(min(df_taxon$day_c), max(df_taxon$day_c), length = 200),
+  smooth_pred <- expand.grid(day = seq(min(df_taxon$day), max(df_taxon$day), length = 200),
                              gavage = levels(df_taxon$gavage))
   
   # predict smooths
@@ -426,10 +417,7 @@ fit_gamm_taxon <- function(taxon_name, data) {
   smooth_pred$upper <- pred$fit + 2 * pred$se.fit
   smooth_pred$lower <- pred$fit - 2 * pred$se.fit
   smooth_pred$taxon <- taxon_name
-  
-  # add day to smooth_df
-  smooth_pred$day <- smooth_pred$day_c + mean(df_taxon$day)
-  
+ 
   # list to store
   list(model = gamm_obj,
        data = df_taxon,
