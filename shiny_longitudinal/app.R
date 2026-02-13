@@ -631,23 +631,39 @@ server <- function(input, output, session) {
     alpha_diversity$models[[input$alpha_metric]]$gamm$summary
   })
   
-  # info pop-up for the GAMM summary
+  # info pop-up for the GAMM summary (parametric coefficients and smooths)
   observeEvent(input$info_gamm_model_summary, {
     showModal(
       modalDialog(
         title = "How to Interpret the GAMM Summary",
-        p(strong("Family:"), "Distribution used when modelling."),
-        p(strong("Link function:"), "Whether the data was transformed. Identity = no transformation"),
-        p(strong("Parametric coefficients:"), "Represent the linear (fixed) effects in the model. Each group term is the linear difference from the reference group averaged over time."),
-        p(strong("Smooth terms:"), "Indicates whether adding nonlinearity significantly improves the model for a given group."),
-        p(strong("edf (effective degrees of freedom:"), "How wiggly the smooth is. > 1 = some nonlinearity"),
+        p("Parametric coefficients for the gavage groups are the vertical shifts of the gavage groups relative to the reference group
+          averaged across the smooth range. In a GAMM with by-factor smooths, it is the vertical shift where the smooth contribution is zero.
+          Since the smooth is constructed so that it has a mean of zero (sum-to-zero-constraint), it is effectively over the range of the predictor.
+          The parametric coefficient for the intercept is the mean level of the reference group averaged across the smooth range."),
+        p(strong("Estimate"), "The average value across the smooth range of the reference group (intercept) or the average shift relative to the
+          reference group across the smooth range (gavage groups)."),
+        p(strong("Std. Rrror"), "Uncertainty (sampling variability) of the estimate."),
+        p(strong("t value"), "Estimate divided by the standard error."),
+        p(strong("p value"), "For the gavage groups, this represents whether they are significantly different from the reference group on average
+        over the range of the smooth. For the intercept, whether the reference group is significantly different from zero."),
+        hr(),
+        p("Smooth terms represent whether there are deviations from zero over time. Can be linear or nonlinear."),
+        p(strong("edf (effective degrees of freedom:"), "Measures the flexibility (wiggliness) of the smooth. How many parameters the smooth is
+          effectively using after penalization.1 ≈ linear and >1 = some nonlinearity."),
+        p(strong("Ref.df (reference degrees of freedom)"), "The degrees of freedom used to approximate the F-test."),
+        p(strong("F:"), "How much the smooth deviates from a flat line (zero) relative to residual variance. The higher the number, the
+          more the evidence that the smooth is not flat."),
+        p(strong("p-value/"), "This represents whether the smooth significantly deviates from zero."),
+        hr(),
         p(strong("R-sq. (adj):"), "Proportion of the variance explained by the model."),
-        p(strong("Scale est."), "In Gaussian models, the scale parameter is an estimate of the residual variance (i.e., the amount of variation in your response variable that your model cannot explain)."),
+        p(strong("Scale est."), "An estimate of the residual variance (i.e., the amount of variation that your model cannot explain)."),
+        hr(),
+        p("To compare the difference smooths between the groups, see Smooth Difference (GAMM)."),
         footer = modalButton("Close")
       )
     )
   })
-  
+
   
   # GAMM smooth difference plots 
   output$gamm_smooth_diff_plot <- renderPlot({ 
@@ -667,7 +683,7 @@ server <- function(input, output, session) {
         p(strong("Positive values:"), "The first group in the comparison has higher CLR abundance than the second group at that timepoint."),
         p(strong("Negative values:"), "The first group in the comparison has lower CLR abundance than the second group at that timepoint."),
         p(strong("Shaded regions:"), "Indicate 95% confidence intervals for the differences. If the shaded region does not overlap zero, then 
-          the difference is statistically significant at that timepoint."),
+          there is evidence of a statistically significant difference at that timepoint."),
         footer = modalButton("Close")
       )
     )
@@ -682,10 +698,10 @@ server <- function(input, output, session) {
     df_formatted <- df %>%
       tibble::rownames_to_column("Measure") %>%
       mutate(para = format(round(para, 2), nsmall = 2),
-             `s(day_c):gavageG_1DMD` = formatC(`s(day_c):gavageG_1DMD`, format = "e", digits = 4),
-             `s(day_c):gavageG_4DMD` = formatC(`s(day_c):gavageG_4DMD`, format = "e", digits = 4),
-             `s(day_c):gavageG_4W7C` = formatC(`s(day_c):gavageG_4W7C`, format = "e", digits = 4),
-             `s(day_c):gavageG_4WMD` = formatC(`s(day_c):gavageG_4WMD`, format = "e", digits = 4))
+             `s(day):gavageG_1DMD` = formatC(`s(day):gavageG_1DMD`, format = "e", digits = 4),
+             `s(day):gavageG_4DMD` = formatC(`s(day):gavageG_4DMD`, format = "e", digits = 4),
+             `s(day):gavageG_4W7C` = formatC(`s(day):gavageG_4W7C`, format = "e", digits = 4),
+             `s(day):gavageG_4WMD` = formatC(`s(day):gavageG_4WMD`, format = "e", digits = 4))
     
     df_formatted
   })
@@ -1362,6 +1378,19 @@ server <- function(input, output, session) {
     
   })
   
+  # info pop-up for the heatmap
+  observeEvent(input$info_rel_abun_heatmap, {
+    showModal(
+      modalDialog(
+        title = "Heatmap of Selected Taxa",
+        p("The heatmap shows the relative abundance of each taxon for each gavage group on each timepoint 
+          scaled across the taxon. Red indicates a relative higher abundance of that taxon comapred to the other 
+          combinations of gavage group and timepoint, and blue indicates a relative lower abundnce of that taxon."),
+        p("You can display either the top N most abundant taxa or manually select taxa of interest."),
+        footer = modalButton("Close")
+      )
+    )
+  })
   
   # data.frame for stacked barplot
   bar_df <- reactive({
@@ -1406,6 +1435,19 @@ server <- function(input, output, session) {
       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
   })
   
+  # info pop-up for the stacked barplot
+  observeEvent(input$info_rel_abun_barplot, {
+    showModal(
+      modalDialog(
+        title = "Stacked Barplot of Selected Taxa",
+        p("The stacked barplot shows the mean relative abundance of the selected taxa within each gavage group at each timepoint."),
+        p("Taxa not selected for display are grouped together in 'Other'."),
+        p("You can display either the top N most abundant taxa or manually select taxa of interest."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
  
   ### relative abundance over time
   
@@ -1419,14 +1461,14 @@ server <- function(input, output, session) {
   output$gamm_indiv_taxon_rel_abun_plot <- renderPlot({
     
     plot_df <- rel_abun_plot_df() %>% filter(taxon == input$taxon_select)
-    ggplot(plot_df, aes(x = day, y = mean_abundance, color = gavage, group = gavage, fill = gavage)) +
-      geom_line() + geom_point() + theme_minimal() +
+    ggplot(plot_df, aes(x = day, color = gavage, group = gavage, fill = gavage)) +
+      geom_line(aes(y = mean_abundance)) + theme_minimal() +
+      geom_jitter(aes(y = Abundance), width = 0.2, alpha = 0.5) + 
       geom_ribbon(aes(ymin = mean_abundance - sem, ymax = mean_abundance + sem), alpha = 0.2, color = NA) +
       scale_color_manual(values = gavage_colors, drop = FALSE) +
       scale_fill_manual(values = gavage_colors, drop = FALSE) +
       labs(x = "Day", y = "Mean Relative Abundance", color = "Gavage", fill = "Gavage")
   })
-  
  
   # info pop-up for relative abundance over time plot
   observeEvent(input$info_gamm_indiv_taxon_rel_abun_plot, {
@@ -1435,7 +1477,6 @@ server <- function(input, output, session) {
         title = "Relative Abundance of Individual Taxon Over Time",
         p("Plot of the mean relative abundance of the selected taxon over time for each gavage group. 
           Shaded ribbons represent the standard error of the mean (SEM)."),
-        p(strong(":"), "."),
         footer = modalButton("Close")
       )
     )
@@ -1541,17 +1582,28 @@ server <- function(input, output, session) {
     showModal(
       modalDialog(
         title = "How to Interpret the GAMM Summary",
-        p(strong("Parametric coefficients:"), "Represent the linear (fixed) effects in the model. Each group term is the linear difference from the reference group averaged over time."),
-        p(strong("estimate"), "Estimated effect size (difference in CLR-transformed abundance relative to the reference group)."),
-        p(strong("std_error"), "Uncertainty of the estimated effect size."),
-        p(strong("t_value"), "Test statistic for the parametric effect (estimate divided by the standard error)."),
+        p("Parametric coefficients for the gavage groups are the vertical shifts of the gavage groups relative to the reference group 
+          averaged across the smooth range. In a GAMM with by-factor smooths, it is the vertical shift where the smooth contribution is zero. 
+          Since the smooth is constructed so that it has a mean of zero (sum-to-zero-constraint), it is effectively over the range of the predictor. 
+          The parametric coefficient for the intercept is the mean level of the reference group averaged across the smooth range."),
+        p(strong("estimate"), "The average value across the smooth range of the reference group (intercept) or the average shift relative to the 
+          reference group across the smooth range (gavage groups)."),
+        p(strong("std_error"), "Uncertainty (sampling variability) of the estimate."),
+        p(strong("t_value"), "Estimate divided by the standard error."),
+        p(strong("p_value/p_adj"), "Significance before and after multiple-testing correction (BH). For the gavage groups, this represents 
+          whether they are significantly different from the reference group on average over the range of the smooth. For the intercept, 
+          whether the reference group is significantly different from zero."),
         hr(),
-        p(strong("Smooth terms:"), "Indicates whether adding nonlinearity significantly improves the model for a given group."),
-        p(strong("edf (effective degrees of freedom:"), "How wiggly the smooth is. > 1 = some nonlinearity"),
-        p(strong("ref_df"), "Reference degrees of freedom used for significance testing of the smooth."),
-        p(strong("F_value:"), "Test statistic assessing whether the smooth explains significant variation over time."),
+        p("Smooth terms represent whether there are deviations from zero over time. Can be linear or nonlinear."),
+        p(strong("edf (effective degrees of freedom:"), "Measures the flexibility (wiggliness) of the smooth. How many parameters the smooth is 
+          effectively using after penalization.1 ≈ linear and >1 = some nonlinearity."),
+        p(strong("ref_df (reference degrees of freedom)"), "The degrees of freedom used to approximate the F-test."),
+        p(strong("F_value:"), "How much the smooth deviates from a flat line (zero) relative to residual variance. The higher the number, the 
+          more the evidence that the smooth is not flat."),
+        p(strong("p_value/p_adj"), "Significance before and after multiple-testing correction (BH). This represents whether the smooth significantly 
+          deviates from zero."),
         hr(),
-        p(strong("p_value/p_adj"), "Significance before and after mutliple-testing correction (BH)."),
+        p("To compare the difference smooths between the groups, see Smooth Difference (GAMM)."),
         footer = modalButton("Close")
       )
     )
@@ -1580,7 +1632,7 @@ server <- function(input, output, session) {
         p(strong("Positive values:"), "The first group in the comparison has higher CLR abundance than the second group at that timepoint."),
         p(strong("Negative values:"), "The first group in the comparison has lower CLR abundance than the second group at that timepoint."),
         p(strong("Shaded regions:"), "Indicate 95% confidence intervals for the differences. If the shaded region does not overlap zero, then 
-          the difference is statistically significant at that timepoint."),
+          there is evidence of a statistically significant difference at that timepoint."),
         footer = modalButton("Close")
       )
     )
@@ -1689,10 +1741,10 @@ server <- function(input, output, session) {
     df_formatted <- df %>% 
       tibble::rownames_to_column("Measure") %>%
       mutate(para = format(round(para, 2), nsmall = 2),
-             `s(day_c):gavageG_1DMD` = formatC(`s(day_c):gavageG_1DMD`, format = "e", digits = 4),
-             `s(day_c):gavageG_4DMD` = formatC(`s(day_c):gavageG_4DMD`, format = "e", digits = 4),
-             `s(day_c):gavageG_4W7C` = formatC(`s(day_c):gavageG_4W7C`, format = "e", digits = 4),
-             `s(day_c):gavageG_4WMD` = formatC(`s(day_c):gavageG_4WMD`, format = "e", digits = 4))
+             `s(day):gavageG_1DMD` = formatC(`s(day):gavageG_1DMD`, format = "e", digits = 4),
+             `s(day):gavageG_4DMD` = formatC(`s(day):gavageG_4DMD`, format = "e", digits = 4),
+             `s(day):gavageG_4W7C` = formatC(`s(day):gavageG_4W7C`, format = "e", digits = 4),
+             `s(day):gavageG_4WMD` = formatC(`s(day):gavageG_4WMD`, format = "e", digits = 4))
     
     df_formatted
   })

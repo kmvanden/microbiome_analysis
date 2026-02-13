@@ -313,10 +313,10 @@ df_taxa <- psmelt(ps_rel)
 # summarize relative abundance of taxa over time and gavage group
 rel_abun_df <- df_taxa %>%
   group_by(day, gavage, OTU) %>%
-  summarize(mean_abundance = mean(Abundance), 
-            sem = sd(Abundance)/sqrt(n()),
-            .groups = "drop") %>%
+  mutate(mean_abundance = mean(Abundance), 
+         sem = sd(Abundance)/sqrt(n())) %>%
   rename(taxon = OTU) %>%
+  select(taxon, Abundance, gavage, day, mean_abundance, sem) %>%
   as.data.frame()
 
 
