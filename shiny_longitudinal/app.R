@@ -472,29 +472,30 @@ server <- function(input, output, session) {
   observeEvent(input$info_lmm_resid_plot, {
     showModal(
       modalDialog(
-        title = "How to Interpret the Residuals vs Fitted Values Plot, the Normal Q-Q Plot and the Response vs Fitted Values Plot",
-        p("The Residuals versus Fitted Values plot is used to check whether the statistical model is appropriate for the data by checking whether the remaining errors (residuals) are random 
-          or if they show structure the model failed to capture. The points should be randomly scattered around zero (i.e., no clear pattern or trend)."),
-        p(strong("Curved pattern:"), "Model failed to capture nonlinear strucutre in the mean (e.g., missing interaction)."),
-        p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
-        p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
-        p(strong("Extreme outliers:"), "Influential points or possible errors."),
+        title = "How to Interpret the Diagnostics Plots",
+        p(strong("Residual versus fitted plot:"), "allows you to assess whether the model has captured the relationship between the predictors and whether the outcome 
+          and whether the residuals are homoscedastic."),
+        p("The residuals should be evenly distributed around zero (the horizontal line) across the range of fitted values."),
+        p(strong("Systemic patterns or curvature:"), "suggest that the model has not captured a key aspect of the data (e.g., the model may be missing an important variable 
+          or interaction term or the relationship between a predictor and the outcome may be nonlinear)."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
         hr(),
-        p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
-          Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
-          If residuals are not normal, p-values and confidence intervals may be unreliable."),
-        p(strong("Points lie on a straight 45° line:"), "Residuals are approximately normally distributed."),
-        p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
-        p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
-        p(strong("Large deviations at the ends:"), "Potential outliers."),
+        p(strong("QQ plot (quantile-quantile plot):"), "compares the empirical distribution of the residuals against a specified (often normal) distribution, allowing you 
+          to assess whether the residuals follow the assumed distribution. Normality of the residuals is essential for hypothesis testing (p-values) and for the validity 
+          of the confidence intervals."),
+        p("The residuals should lie along a straight 45-degree diagonal line if they approximately follow the specified distribution."),
+        p(strong("Curvature (concave or convex):"), "typically indicates skewness. A convex curve (tails below the line), indicates a left (negative) skew. A concave curve 
+          (tails above the line), indicates a right (positive) skew."),
+        p(strong("S-shaped curve :"), "typically indicates kurtosis. If points are below the line on the left and above the line on the right it indicates heavy tails 
+          (leptokurtic). If points are above the line on the left and below the line on the right, it indicates light tails (platykurtic)."),
         hr(),
-        p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
-          captures the overall trends in the data and whether there are systematic deviations."),
-        p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
-        p(strong("Points systematically above or below the line:"), "The model under- or over-predicts in certain ranges."),
-        p(strong("Nonlinear patterns or curves:"), "The model may be missing key nonlinear effects or interactions."),
-        p(strong("Large scatter or wide spread around the line:"), "High residual variance; model may not explain much of the variation."),
-        p(strong("Clusters or gaps:"), "Indicates group-specific effects or unmodeled structure in the data."),
+        p(strong("Response versus fitted plot:"),"shows how well the model predictions align with the actual data."),
+        p("If the model explains a lot of the variance (high predictive power), the points will cluster along a 45-degree diagonal line."),
+        p(strong("Systematic bias in predictions:"), "(e.g., points are consistently above or below the line) indicate that the model is consistently wrong in one direction 
+          (i.e., the model is underpredicting or overpredicting). This can happen if the model is missing an important variable or interaction term."),
+        p(strong("Curvature (concave or convex):"), "can indicate that the relationship between a predictor and the outcome is nonlinear."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
+        p(strong("Large scatter or wide spread around the line:"), "high residual variance; model may not explain much of the variation."),
         footer = modalButton("Close")
       )
     )
@@ -597,29 +598,31 @@ server <- function(input, output, session) {
   observeEvent(input$info_gamm_resid_plot, {
     showModal(
       modalDialog(
-        title = "How to Interpret the Residuals vs Fitted Values Plot, the Normal Q-Q Plot and the Response vs Fitted Values Plot",
-        p("The Residuals versus Fitted Values plot is used to check whether the statistical model is appropriate for the data by checking whether the remaining errors (residuals) are random 
-          or if they show structure the model failed to capture. The points should be randomly scattered around zero (i.e., no clear pattern or trend)."),
-        p(strong("Curved pattern:"), "Model failed to capture nonlinear strucutre in the mean (e.g., missing interaction)."),
-        p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
-        p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
-        p(strong("Extreme outliers:"), "Influential points or possible errors."),
+        title = "How to Interpret the Diagnostics Plots",
+        p(strong("Residual versus fitted plot:"), "allows you to assess whether the model has captured the relationship between the predictors and whether the outcome 
+          and whether the residuals are homoscedastic."),
+        p("The residuals should be evenly distributed around zero (the horizontal line) across the range of fitted values."),
+        p(strong("Systemic patterns or curvature:"), "suggest that the model has not captured a key aspect of the data (e.g., the model may be missing an important variable 
+          or interaction term, the smooth term may be too constrained or the relationship between a predictor and the outcome may be nonlinear)."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
         hr(),
-        p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
-          Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
-          If residuals are not normal, p-values and confidence intervals may be unreliable."),
-        p(strong("Points lie on a straight 45° line:"), "Residuals are approximately normally distributed."),
-        p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
-        p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
-        p(strong("Large deviations at the ends:"), "Potential outliers."),
+        p(strong("QQ plot (quantile-quantile plot):"), "compares the empirical distribution of the residuals against a specified (often normal) distribution, allowing you 
+          to assess whether the residuals follow the assumed distribution. Normality of the residuals is essential for hypothesis testing (p-values) and for the validity 
+          of the confidence intervals."),
+        p("The residuals should lie along a straight 45-degree diagonal line if they approximately follow the specified distribution."),
+        p(strong("Curvature (concave or convex):"), "typically indicates skewness. A convex curve (tails below the line), indicates a left (negative) skew. A concave curve 
+          (tails above the line), indicates a right (positive) skew."),
+        p(strong("S-shaped curve :"), "typically indicates kurtosis. If points are below the line on the left and above the line on the right it indicates heavy tails 
+          (leptokurtic). If points are above the line on the left and below the line on the right, it indicates light tails (platykurtic)."),
         hr(),
-        p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
-          captures the overall trends in the data and whether there are systematic deviations."),
-        p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
-        p(strong("Points systematically above or below the line:"), "The model under- or over-predicts in certain ranges."),
-        p(strong("Nonlinear patterns or curves:"), "The model may be missing key nonlinear effects or interactions."),
-        p(strong("Large scatter or wide spread around the line:"), "High residual variance; model may not explain much of the variation."),
-        p(strong("Clusters or gaps:"), "Indicates group-specific effects or unmodeled structure in the data."),
+        p(strong("Response versus fitted plot:"),"shows how well the model predictions align with the actual data."),
+        p("If the model explains a lot of the variance (high predictive power), the points will cluster along a 45-degree diagonal line."),
+        p(strong("Systematic bias in predictions:"), "(e.g., points are consistently above or below the line) indicate that the model is consistently wrong in one direction 
+          (i.e., the model is underpredicting or overpredicting). This can happen if the model is missing an important variable or interaction term."),
+        p(strong("Curvature (concave or convex):"), "can indicate that the relationship between a predictor and the outcome is nonlinear or the smooth term is too constrained 
+          (i.e., the model can’t bend enough to match the data)."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
+        p(strong("Large scatter or wide spread around the line:"), "high residual variance; model may not explain much of the variation."),
         footer = modalButton("Close")
       )
     )
@@ -711,13 +714,15 @@ server <- function(input, output, session) {
     showModal(
       modalDialog(
         title = "How to Read the Concurvity Table",
-        p("How much redundancy or linear dependence exists in the model (i.e., how much one term can explain another term). 
-        If two terms are highly dependendent, it is hard for the model to separate their effects. 
-        0 = no redundancy, > 0.5 = moderate redundancy, and > 0.9 = very high redundancy."),
-        p(strong("Measure:"), "worst = maximum concurvity for the term across all other terms, observed = concurvity calculated 
-          directly from the fitted model, and estimate = smoothed/adjusted estimate of concurvity."),
+        p("Measures how much a smooth term can be approximated by other smooth terms or parametric terms in the model. 
+          It is similar to multicollinearity in linear mixed models. With high concurvity, the model may produce unstable 
+          estimates for the smooths, have inflated standard errors and be sensitive to small changes in the data."),
+        p(strong("worst:"), "represents the worst-case concurvity for each smooth term ( i.e., the maximum correlation between 
+          this smooth term and any other smooth term in the model)."),
+        p(strong("observed:"), "the observed concurvity for each smooth term, based on the data and the actual fit of the model."),
+        p(strong("estimate:"), "estimated concurvity, based on the model's design and assumptions."),
         p(strong("para:"), "The parametric coefficients (see Model Summary (GAMM))."),
-        p(strong("s(day):gavage...:"), "The smooth terms/group-specific nonlinear trends over time (see Model Summary (GAMM))."),
+        p(strong("s(day):gavage...:"), "The smooth terms (see Model Summary (GAMM))."),
         easyClose = TRUE,
         footer = modalButton("Close")
       )
@@ -1692,33 +1697,35 @@ server <- function(input, output, session) {
     abline(a = 0, b = 1, lty = 2)
   })
   
-  # info pop-up for GAM residuals vs fitted plot, normal Q-Q plot and response vs fitted plot
+  # info pop-up for GAMM residuals vs fitted plot, Q-Q plot and response vs fitted plot
   observeEvent(input$info_gamm_indiv_taxon_resid_plot, {
     showModal(
       modalDialog(
-        title = "How to Interpret the Residuals vs Fitted Values Plot, the Normal Q-Q Plot and the Response vs Fitted Values Plot",
-        p("The Residuals versus Fitted Values plot is used to check whether the statistical model is appropriate for the data by checking whether the remaining errors (residuals) are random 
-          or if they show structure the model failed to capture. The points should be randomly scattered around zero (i.e., no clear pattern or trend)."),
-        p(strong("Curved pattern:"), "Model failed to capture nonlinear strucutre in the mean (e.g., missing interaction)."),
-        p(strong("Curved clusters or bands:"), "Group-specific trends or correlation structure is not adequately modeled."),
-        p(strong("Widening/narrowing:"), "Non-constant variance (heteroscedasticity)."),
-        p(strong("Extreme outliers:"), "Influential points or possible errors."),
+        title = "How to Interpret the Diagnostics Plots",
+        p(strong("Residual versus fitted plot:"), "allows you to assess whether the model has captured the relationship between the predictors and whether the outcome 
+          and whether the residuals are homoscedastic."),
+        p("The residuals should be evenly distributed around zero (the horizontal line) across the range of fitted values."),
+        p(strong("Systemic patterns or curvature:"), "suggest that the model has not captured a key aspect of the data (e.g., the model may be missing an important variable 
+          or interaction term, the smooth term may be too constrained or the relationship between a predictor and the outcome may be nonlinear)."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
         hr(),
-        p("The Normal Q-Q plot (quantile-quantile plot) is used to compare the distribution of the residuals with a theoretical distribution (often normal). 
-          Each point represents how one residual compares to what would be expected under normality. LMMs and Gaussian GAMMs assume that residuals are normally distributed. 
-          If residuals are not normal, p-values and confidence intervals may be unreliable."),
-        p(strong("Points lie on a straight 45° line:"), "Residuals are approximately normally distributed."),
-        p(strong("S-shaped curve:"), "Less extreme values (concave up then down) or more extreme values (concave down then up) than normal."),
-        p(strong("Points curve away at ends:"), "Indicates skewed residuals."),
-        p(strong("Large deviations at the ends:"), "Potential outliers."),
+        p(strong("QQ plot (quantile-quantile plot):"), "compares the empirical distribution of the residuals against a specified (often normal) distribution, allowing you 
+          to assess whether the residuals follow the assumed distribution. Normality of the residuals is essential for hypothesis testing (p-values) and for the validity 
+          of the confidence intervals."),
+        p("The residuals should lie along a straight 45-degree diagonal line if they approximately follow the specified distribution."),
+        p(strong("Curvature (concave or convex):"), "typically indicates skewness. A convex curve (tails below the line), indicates a left (negative) skew. A concave curve 
+          (tails above the line), indicates a right (positive) skew."),
+        p(strong("S-shaped curve :"), "typically indicates kurtosis. If points are below the line on the left and above the line on the right it indicates heavy tails 
+          (leptokurtic). If points are above the line on the left and below the line on the right, it indicates light tails (platykurtic)."),
         hr(),
-        p("The Response versus Fitted Values plot compares the observed response values to the values predicted by the model. This plot helps you see how well the model 
-          captures the overall trends in the data and whether there are systematic deviations."),
-        p(strong("Points lie roughly along the y = x line:"), "The model fits the data well; predicted values match observed values."),
-        p(strong("Points systematically above or below the line:"), "The model under- or over-predicts in certain ranges."),
-        p(strong("Nonlinear patterns or curves:"), "The model may be missing key nonlinear effects or interactions."),
-        p(strong("Large scatter or wide spread around the line:"), "High residual variance; model may not explain much of the variation."),
-        p(strong("Clusters or gaps:"), "Indicates group-specific effects or unmodeled structure in the data."),
+        p(strong("Response versus fitted plot:"),"shows how well the model predictions align with the actual data."),
+        p("If the model explains a lot of the variance (high predictive power), the points will cluster along a 45-degree diagonal line."),
+        p(strong("Systematic bias in predictions:"), "(e.g., points are consistently above or below the line) indicate that the model is consistently wrong in one direction 
+          (i.e., the model is underpredicting or overpredicting). This can happen if the model is missing an important variable or interaction term."),
+        p(strong("Curvature (concave or convex):"), "can indicate that the relationship between a predictor and the outcome is nonlinear or the smooth term is too constrained 
+          (i.e., the model can’t bend enough to match the data)."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
+        p(strong("Large scatter or wide spread around the line:"), "high residual variance; model may not explain much of the variation."),
         footer = modalButton("Close")
       )
     )
@@ -1754,13 +1761,15 @@ server <- function(input, output, session) {
     showModal(
       modalDialog(
         title = "How to Read the Concurvity Table",
-        p("How much redundancy or linear dependence exists in the model (i.e., how much one term can explain another term). 
-        If two terms are highly dependendent, it is hard for the model to separate their effects. 
-        0 = no redundancy, > 0.5 = moderate redundancy, and > 0.9 = very high redundancy."),
-        p(strong("Measure:"), "worst = maximum concurvity for the term across all other terms, observed = concurvity calculated 
-          directly from the fitted model, and estimate = smoothed/adjusted estimate of concurvity."),
+        p("Measures how much a smooth term can be approximated by other smooth terms or parametric terms in the model. 
+          It is similar to multicollinearity in linear mixed models. With high concurvity, the model may produce unstable 
+          estimates for the smooths, have inflated standard errors and be sensitive to small changes in the data."),
+        p(strong("worst:"), "represents the worst-case concurvity for each smooth term ( i.e., the maximum correlation between 
+          this smooth term and any other smooth term in the model)."),
+        p(strong("observed:"), "the observed concurvity for each smooth term, based on the data and the actual fit of the model."),
+        p(strong("estimate:"), "estimated concurvity, based on the model's design and assumptions."),
         p(strong("para:"), "The parametric coefficients (see Model Summary (GAMM))."),
-        p(strong("s(day):gavage...:"), "The smooth terms/group-specific nonlinear trends over time (see Model Summary (GAMM))."),
+        p(strong("s(day):gavage...:"), "The smooth terms (see Model Summary (GAMM))."),
         easyClose = TRUE,
         footer = modalButton("Close")
       )
