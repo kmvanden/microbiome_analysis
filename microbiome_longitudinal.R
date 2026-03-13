@@ -8,6 +8,7 @@ library(purrr)
 library(vegan)
 library(lme4)
 library(lmerTest)
+library(performance)
 library(emmeans)
 library(breakaway)
 library(DivNet)
@@ -70,6 +71,7 @@ alpha_phyloseq$Chao1 <- chao_df$Chao1 # add Chao1 to alpha_phyloseq
 alpha_phyloseq$Observed <- observed_df$Observed # add Observed to alpha_phyloseq
 alpha_phyloseq$sample_name <- rownames(alpha_phyloseq) # add column with sample names
 alpha_phyloseq <- left_join(alpha_phyloseq, meta, by = c("sample_name" = "sample_id")) # merge phyloseq object with metadata (for plotting and statistical tests) 
+alpha_phyloseq <- alpha_phyloseq %>% mutate(day_c = day - mean(day)) # create centered day column for numeric 
 
 
 ### calculate breakaway richness
@@ -111,7 +113,7 @@ ggplot(alpha_phyloseq, aes(x = day, y = Observed, color = gavage)) +
 ggplot(alpha_phyloseq, aes(x = day, y = Shannon, color = gavage)) +
   geom_jitter(width = 0.2, alpha = 0.5) + theme_minimal() +
   stat_summary(aes(group = gavage), fun = mean, geom = "line", linewidth = 0.8) +
-  labs(title = "Shannon diversity", y = "Shannon index", x = "Day")
+  labs(title = "Shannon diversity", y = "Shannon index", x = "Day") 
 
 # Simpson diversity
 ggplot(alpha_phyloseq, aes(x = day, y = Simpson, color = gavage)) +
@@ -149,10 +151,16 @@ ggplot(divnet_alpha_diversity_df, aes(x = day, y = simpson_estimate, color = gav
 ######################################################################
 
 ### compute statistics (linear mixed-effects models)
+
 ### Observed richness
-lme_Obs_n <- lmer(Observed ~ gavage * day + (1 | mouse_id), data = alpha_phyloseq) # numeric (linear dynamics)
+lme_Obs_n <- lmer(Observed ~ gavage * day_c + (1 | mouse_id), data = alpha_phyloseq) # numeric centered
 summary(lme_Obs_n)
 anova(lme_Obs_n)
+
+plot(resid(lme_Obs_n) ~ fitted(lme_Obs_n)) # check homoscedasticity 
+qqnorm(resid(lme_Obs_n)); qqline(resid(lme_Obs_n)) # check normality
+check_collinearity(lme_Obs_n) # check multicollinearity 
+
 
 lme_Obs_f <- lmer(Observed ~ gavage * day_factor + (1 | mouse_id), data = alpha_phyloseq) # factor
 summary(lme_Obs_f)
@@ -167,13 +175,21 @@ pairs(emm_Obs_f, adjust = "tukey")
 
 
 ### Shannon diversity
-lme_Shan_n <- lmer(Shannon ~ gavage * day + (1 | mouse_id), data = alpha_phyloseq) # numeric (linear dynamics)
+lme_Shan_n <- lmer(Shannon ~ gavage * day_c + (1 | mouse_id), data = alpha_phyloseq) # numeric centered
 anova(lme_Shan_n)
 summary(lme_Shan_n)
+
+plot(resid(lme_Shan_n) ~ fitted(lme_Shan_n)) # check homoscedasticity 
+qqnorm(resid(lme_Shan_n)); qqline(resid(lme_Shan_n)) # check normality
+check_collinearity(lme_Shan_n) # check multicollinearity 
+
 
 lme_Shan_f <- lmer(Shannon ~ gavage * day_factor + (1 | mouse_id), data = alpha_phyloseq) # factor
 anova(lme_Shan_f)
 summary(lme_Shan_f)
+
+plot(resid(lme_Shan_f) ~ fitted(lme_Shan_f)) # check homoscedasticity 
+qqnorm(resid(lme_Shan_f)); qqline(resid(lme_Shan_f)) # check normality
 
 # pairwise contrasts within each day
 emm_Shan_f <- emmeans(lme_Shan_f, ~ gavage | day_factor) 
@@ -181,13 +197,21 @@ pairs(emm_Shan_f, adjust = "tukey")
 
 
 ### Simpson diversity
-lme_Simp_n <- lmer(Simpson ~ gavage * day + (1 | mouse_id), data = alpha_phyloseq) # numeric (linear dynamics)
+lme_Simp_n <- lmer(Simpson ~ gavage * day_c + (1 | mouse_id), data = alpha_phyloseq) # numeric centered
 summary(lme_Simp_n)
 anova(lme_Simp_n)
+
+plot(resid(lme_Simp_n) ~ fitted(lme_Simp_n)) # check homoscedasticity 
+qqnorm(resid(lme_Simp_n)); qqline(resid(lme_Simp_n)) # check normality
+check_collinearity(lme_Simp_n) # check multicollinearity 
+
 
 lme_Simp_f <- lmer(Simpson ~ gavage * day_factor + (1 | mouse_id), data = alpha_phyloseq) # factor
 summary(lme_Simp_f)
 anova(lme_Simp_f)
+
+plot(resid(lme_Simp_f) ~ fitted(lme_Simp_f)) # check homoscedasticity 
+qqnorm(resid(lme_Simp_f)); qqline(resid(lme_Simp_f)) # check normality
 
 # pairwise contrasts within each day
 emm_Simp_f <- emmeans(lme_Simp_f, ~ gavage | day_factor)
@@ -195,9 +219,13 @@ pairs(emm_Simp_f, adjust = "tukey")
 
 
 ### Chao1 diversity
-lme_Chao_n <- lmer(Chao1 ~ gavage * day + (1 | mouse_id), data = alpha_phyloseq) # numeric
+lme_Chao_n <- lmer(Chao1 ~ gavage * day_c + (1 | mouse_id), data = alpha_phyloseq) # numeric centered
 summary(lme_Chao_n)
 anova(lme_Chao_n)
+
+plot(resid(lme_Chao_n) ~ fitted(lme_Chao_n)) # check homoscedasticity 
+qqnorm(resid(lme_Chao_n)); qqline(resid(lme_Chao_n)) # check normality
+check_collinearity(lme_Chao_n) # check multicollinearity 
 
 lme_Chao_f <- lmer(Chao1 ~ gavage * day_factor + (1 | mouse_id), data = alpha_phyloseq) # factor
 summary(lme_Chao_f)
@@ -212,10 +240,15 @@ pairs(emm_Chao_f, adjust = "tukey")
 
 
 ### richness (breakaway)
-lme_b_Obs_n <- lmer(estimate ~ gavage * day + (1 | mouse_id), data = breakaway_richness_df, # numeric (linear dynamics)
+lme_b_Obs_n <- lmer(estimate ~ gavage * day_c + (1 | mouse_id), data = breakaway_richness_df, # numeric centered
                     weights = 1 / se^2) # inverse-variance weighting
 anova(lme_b_Obs_n)
 summary(lme_b_Obs_n)
+
+plot(resid(lme_b_Obs_n) ~ fitted(lme_b_Obs_n)) # check homoscedasticity 
+qqnorm(resid(lme_b_Obs_n)); qqline(resid(lme_b_Obs_n)) # check normality
+check_collinearity(lme_b_Obs_n) # check multicollinearity 
+
 
 lme_b_Obs_f <- lmer(estimate ~ gavage * day_factor + (1 | mouse_id), data = breakaway_richness_df, # factor
                     weights = 1 / se^2) # inverse-variance weighting
@@ -231,15 +264,23 @@ pairs(emm_b_Obs_f, adjust = "tukey")
 
 
 ### Shannon diversity (DivNet)
-lme_dn_Shan_n <- lmer(shannon_estimate ~ gavage * day + (1 | mouse_id), data = divnet_alpha_diversity_df, # numeric (linear dynamics)
+lme_dn_Shan_n <- lmer(shannon_estimate ~ gavage * day_c + (1 | mouse_id), data = divnet_alpha_diversity_df, # numeric centered
                       weights = 1 / (shannon_error^2)) # inverse-variance weighting
 anova(lme_dn_Shan_n)
 summary(lme_dn_Shan_n)
 
-lme_dn_Shan_f <- lmer(shannon_estimate ~ gavage * day_factor + (1 | mouse_id), data = divnet_alpha_diversity_df,# factor
+plot(resid(lme_dn_Shan_n) ~ fitted(lme_dn_Shan_n)) # check homoscedasticity 
+qqnorm(resid(lme_dn_Shan_n)); qqline(resid(lme_dn_Shan_n)) # check normality
+check_collinearity(lme_dn_Shan_n) # check multicollinearity 
+
+
+lme_dn_Shan_f <- lmer(shannon_estimate ~ gavage * day_factor + (1 | mouse_id), data = divnet_alpha_diversity_df, # factor
                       weights = 1 / (shannon_error^2)) # inverse-variance weighting
 anova(lme_dn_Shan_f)
 summary(lme_dn_Shan_f)
+
+plot(resid(lme_dn_Shan_f) ~ fitted(lme_dn_Shan_f)) # check homoscedasticity 
+qqnorm(resid(lme_dn_Shan_f)); qqline(resid(lme_dn_Shan_f)) # check normality
 
 # pairwise contrasts within each day
 emm_dn_Shan_f <- emmeans(lme_dn_Shan_f, ~ gavage | day_factor)
@@ -247,15 +288,23 @@ pairs(emm_dn_Shan_f, adjust = "tukey")
 
 
 ### Simpson diversity (DivNet)
-lme_dn_Simp_n <- lmer(simpson_estimate ~ gavage * day + (1 | mouse_id), data = divnet_alpha_diversity_df, # numeric (linear dynamics)
+lme_dn_Simp_n <- lmer(simpson_estimate ~ gavage * day_c + (1 | mouse_id), data = divnet_alpha_diversity_df, # numeric centered
                    weights = 1 / (simpson_error^2)) # inverse-variance weighting
 anova(lme_dn_Simp_n)
 summary(lme_dn_Simp_n)
+
+plot(resid(lme_dn_Simp_n) ~ fitted(lme_dn_Simp_n)) # check homoscedasticity 
+qqnorm(resid(lme_dn_Simp_n)); qqline(resid(lme_dn_Simp_n)) # check normality
+check_collinearity(lme_dn_Simp_n) # check multicollinearity 
+
 
 lme_dn_Simp_f <- lmer(simpson_estimate ~ gavage * day_factor + (1 | mouse_id), data = divnet_alpha_diversity_df, # factor
                    weights = 1 / (simpson_error^2)) # inverse-variance weighting
 anova(lme_dn_Simp_f)
 summary(lme_dn_Simp_f)
+
+plot(resid(lme_dn_Simp_f) ~ fitted(lme_dn_Simp_f)) # check homoscedasticity 
+qqnorm(resid(lme_dn_Simp_f)); qqline(resid(lme_dn_Simp_f)) # check normality
 
 # pairwise contrasts within each day
 emm_dn_Simp_f <- emmeans(lme_dn_Simp_f, ~ gavage | day_factor)
@@ -268,14 +317,13 @@ pairs(emm_dn_Simp_f, adjust = "tukey")
 
 ### compute statistics (generalized additive mixed models)
 alpha_phyloseq$gavage <- as.factor(alpha_phyloseq$gavage) 
-alpha_phyloseq <- alpha_phyloseq %>% mutate(day_c = day - mean(day)) # center day (day zero does not exist)
 
 breakaway_richness_df$gavage <- as.factor(breakaway_richness_df$gavage)
 divnet_alpha_diversity_df$gavage <- as.factor(divnet_alpha_diversity_df$gavage)
 
 
 ### Observed richness
-gamm_Obs <- gamm(Observed ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_Obs <- gamm(Observed ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                  random = list(mouse_id = ~1),
                  data = alpha_phyloseq)
 summary(gamm_Obs$gam)
@@ -284,12 +332,12 @@ mgcv::concurvity(gamm_Obs$gam) # check concurvity
 draw(gamm_Obs$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_Obs$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_Obs$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### Shannon diversity
-gamm_Shan <- gamm(Shannon ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_Shan <- gamm(Shannon ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                   random = list(mouse_id = ~1),
                   data = alpha_phyloseq)
 summary(gamm_Shan$gam)
@@ -298,12 +346,12 @@ mgcv::concurvity(gamm_Shan$gam) # check concurvity
 draw(gamm_Shan$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_Shan$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_Shan$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### Simpson diversity
-gamm_Simp <- gamm(Simpson ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_Simp <- gamm(Simpson ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                   random = list(mouse_id = ~1),
                   data = alpha_phyloseq)
 summary(gamm_Simp$gam)
@@ -312,12 +360,12 @@ mgcv::concurvity(gamm_Simp$gam) # check concurvity
 draw(gamm_Simp$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_Simp$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_Simp$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### Chao1 diversity
-gamm_Chao <- gamm(Chao1 ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_Chao <- gamm(Chao1 ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                   random = list(mouse_id = ~1),
                   data = alpha_phyloseq)
 summary(gamm_Chao$gam)
@@ -326,12 +374,12 @@ mgcv::concurvity(gamm_Chao$gam) # check concurvity
 draw(gamm_Chao$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_Chao$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_Chao$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### richness (breakaway)
-gamm_b_Obs <- gamm(estimate ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_b_Obs <- gamm(estimate ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                    random = list(mouse_id = ~1),
                    data = breakaway_richness_df,
                    weights = 1 / se^2) # inverse-variance weighting
@@ -341,12 +389,12 @@ mgcv::concurvity(gamm_b_Obs$gam) # check concurvity
 draw(gamm_b_Obs$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_b_Obs$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_b_Obs$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### Shannon diversity (DivNet)
-gamm_dn_Shan <- gamm(shannon_estimate ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_dn_Shan <- gamm(shannon_estimate ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                      random = list(mouse_id = ~1),
                      data = divnet_alpha_diversity_df,
                      weights = 1 / (shannon_error^2)) # inverse-variance weighting
@@ -356,12 +404,12 @@ mgcv::concurvity(gamm_dn_Shan$gam) # check concurvity
 draw(gamm_dn_Shan$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_dn_Shan$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_dn_Shan$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### Simpson diversity (DivNet)
-gamm_dn_Simp <- gamm(simpson_estimate ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_dn_Simp <- gamm(simpson_estimate ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                      random = list(mouse_id = ~1),
                      data = divnet_alpha_diversity_df,
                      weights = 1 / (simpson_error^2)) # inverse-variance weighting
@@ -371,13 +419,13 @@ mgcv::concurvity(gamm_dn_Simp$gam) # check concurvity
 draw(gamm_dn_Simp$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_dn_Simp$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_dn_Simp$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### plot smooths for Shannon
 # create data.frame of smooths for all gavage x centered day combinations
-smooth_df <- expand.grid(day_c = seq(min(alpha_phyloseq$day_c), max(alpha_phyloseq$day_c),
+smooth_df <- expand.grid(day = seq(min(alpha_phyloseq$day), max(alpha_phyloseq$day),
                                    length = 200), gavage = levels(alpha_phyloseq$gavage))
 
 # predict smooths
@@ -387,9 +435,6 @@ pred <- predict(gamm_Shan$gam, newdata = smooth_df, se.fit = TRUE, type = "respo
 smooth_df$fit   <- pred$fit
 smooth_df$upper <- pred$fit + 2 * pred$se.fit
 smooth_df$lower <- pred$fit - 2 * pred$se.fit
-
-# add day to smooth_df
-smooth_df$day <- smooth_df$day_c + mean(alpha_phyloseq$day)
 
 ggplot() + theme_minimal() +
   geom_point(data = alpha_phyloseq, aes(day, Shannon, color = gavage), alpha = 0.4) +
@@ -402,7 +447,7 @@ ggplot() + theme_minimal() +
 plot_alpha_gamm <- function(data, gamm_obj, alpha_div_metric) {
   
   # create data.frame of smooths for all gavage x centered day combinations
-  smooth_df <- expand.grid(day_c = seq(min(data$day_c), max(data$day_c), length = 200),
+  smooth_df <- expand.grid(day = seq(min(data$day), max(data$day), length = 200),
                            gavage = levels(data$gavage))
   
   # predict smooths
@@ -412,10 +457,7 @@ plot_alpha_gamm <- function(data, gamm_obj, alpha_div_metric) {
   smooth_df$fit   <- pred$fit
   smooth_df$upper <- pred$fit + 2 * pred$se.fit
   smooth_df$lower <- pred$fit - 2 * pred$se.fit
-  
-  # add day to smooth_df
-  smooth_df$day <- smooth_df$day_c + mean(alpha_phyloseq$day)
-  
+
   ggplot() + theme_minimal() +
     geom_point(data = data, aes(x = day, y = .data[[alpha_div_metric]], color = gavage), alpha = 0.4) +
     geom_line(data = smooth_df, aes(day, fit, color = gavage), linewidth = 1) +
@@ -966,14 +1008,11 @@ df_long <- feat_long %>%
 # convert gavage to factor
 df_long$gavage <- as.factor(df_long$gavage)
 
-# center day (day zero does not exist)
-df_long <- df_long %>% mutate(day_c = day - mean(day))
-
 
 ### fit model with one feature
 taxon_name <- "Dorea_longicatena"
 df_taxon <- df_long %>% filter(taxon == taxon_name)
-gamm_model <- gamm(abundance ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_model <- gamm(abundance ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                    random = list(mouse_id = ~1),
                    data = df_taxon)
 summary(gamm_model$gam)
@@ -982,13 +1021,13 @@ mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth ter
 draw(gamm_model$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_model$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_model$gam, select = "s(day)")
 draw(pair_comp)
 
 
 taxon_name <- "Faecalibacterium_prausnitzii"
 df_taxon <- df_long %>% filter(taxon == taxon_name)
-gamm_model <- gamm(abundance ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+gamm_model <- gamm(abundance ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                    random = list(mouse_id = ~1),
                    data = df_taxon)
 summary(gamm_model$gam)
@@ -997,13 +1036,13 @@ mgcv::concurvity(gamm_model$gam) # check concurvity (collinearity for smooth ter
 draw(gamm_model$gam) # smooth plots
 
 # pairwise comparisons
-pair_comp <- difference_smooths(gamm_model$gam, select = "s(day_c)")
+pair_comp <- difference_smooths(gamm_model$gam, select = "s(day)")
 draw(pair_comp)
 
 
 ### plot smooths for one feature
 # create data.frame of smooths for all gavage x centered day combinations
-smooth_df <- expand.grid(day_c = seq(min(df_taxon$day_c), max(df_taxon$day_c), length = 200),
+smooth_df <- expand.grid(day = seq(min(df_taxon$day), max(df_taxon$day), length = 200),
                          gavage = levels(df_taxon$gavage))
 
 # predict smooths
@@ -1013,9 +1052,6 @@ pred <- predict(gamm_model$gam, newdata = smooth_df, se.fit = TRUE, type = "resp
 smooth_df$fit   = pred$fit
 smooth_df$upper = pred$fit + 2 * pred$se.fit
 smooth_df$lower = pred$fit - 2 * pred$se.fit
-
-# add day to smooth_df
-smooth_df$day <- smooth_df$day_c + mean(df_taxon$day)
 
 ggplot() + theme_minimal() +
   geom_point(data = df_taxon, aes(day, abundance, color = gavage), alpha = 0.4) +
@@ -1031,7 +1067,7 @@ fit_gamm_taxon <- function(df, taxon_name) {
   # try-catch wrapper
   out <- tryCatch({
     
-    fit <- gamm(abundance ~ gavage + s(day_c, by = gavage, bs = "fs", k = 4),
+    fit <- gamm(abundance ~ gavage + s(day, by = gavage, bs = "fs", k = 4),
                 random = list(mouse_id = ~1),
                 data = df_taxon)
     
@@ -1094,7 +1130,7 @@ smooth_results <- smooth_results %>%
 # plot pairwise differences
 taxon_name <- "Faecalibacterium_prausnitzii"
 smooth_diff <- gamm_results[[which(taxa_list == taxon_name)]]
-pair_comp <- difference_smooths(smooth_diff$model_gam, select = "s(day_c)")
+pair_comp <- difference_smooths(smooth_diff$model_gam, select = "s(day)")
 draw(pair_comp)
 
 # extract success and failure flags

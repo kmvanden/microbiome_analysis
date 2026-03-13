@@ -24,7 +24,7 @@ setwd("/Users/kristinvandenham/kmvanden/RStudio")
 # metadata
 meta <- read.table("metadata_gavage.txt", header = TRUE)
 rownames(meta) <- meta$sample_id
-meta$day_factor <- factor(meta$day) # add day as a factor for plotting
+meta$day_factor <- factor(meta$day) # add day as a factor for categorical analysis
 sampledata <- sample_data(meta) # convert to sample_data
 
 # save metadata as RDS file for Shiny app
@@ -56,10 +56,11 @@ alpha_diversity_metrics$Chao1 <- estimate_richness(ps, measures = "Chao1")$Chao1
 alpha_diversity_metrics$Observed <- estimate_richness(ps_rarefied, measures = "Observed")$Observed # add Observed to alpha_diversity_metrics
 alpha_diversity_metrics$sample_name <- rownames(alpha_diversity_metrics) # add column with sample names
 alpha_div_df <- left_join(alpha_diversity_metrics, meta, by = c("sample_name" = "sample_id")) # merge phyloseq object with metadata (for plotting and statistical tests) 
+alpha_div_df <- alpha_div_df %>% mutate(day_c = day - mean(day)) # create centered day column for numeric 
 
 
-### linear mixed effects models
-fit_lmm <- function(metric, data = data) {
+### linear mixed effects models - categorical day
+fit_lmm_cat <- function(metric, data = data) {
   formula <- as.formula(paste0(metric, " ~ gavage * day_factor + (1 | mouse_id)")) # build formula string
   model <- lmer(formula, data = data) # fit linear-mixed effects model
   
@@ -69,6 +70,17 @@ fit_lmm <- function(metric, data = data) {
        emmeans = emmeans(model, ~ gavage | day_factor) %>% # commute estimated marginal means
          pairs(adjust = "tukey") %>% # tukey pairwise contrasts within each day
          as.data.frame())
+}
+
+
+### linear mixed effects models - centered numerical day
+fit_lmm_num <- function(metric, data = data) {
+  formula <- as.formula(paste0(metric, " ~ gavage * day_c + (1 | mouse_id)")) # build formula string
+  model <- lmer(formula, data = data) # fit linear-mixed effects model
+  
+  # list to store
+  list(model = model, 
+       anova = anova(model))
 }
 
 
@@ -114,7 +126,8 @@ fit_gamm <- function(metric, data) {
 metrics <- c("Observed", "Shannon", "Simpson", "Chao1")
 models <- set_names(metrics) %>% # assigns names to vector elements (resulting list will have named elements)
   map(function(metric){
-    list(lmm = fit_lmm(metric, alpha_div_df),
+    list(lmm_cat = fit_lmm_cat(metric, alpha_div_df),
+         lmm_num = fit_lmm_num(metric, alpha_div_df),
          gamm = fit_gamm(metric, alpha_div_df))
   })
 

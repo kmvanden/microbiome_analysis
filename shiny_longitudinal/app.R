@@ -11,6 +11,7 @@ library(DT)
 library(vegan)
 library(gratia)
 library(pheatmap)
+library(performance)
 
 # setwd
 setwd("/Users/kristinvandenham/kmvanden/RStudio/microbiome_analysis/shiny_longitudinal")
@@ -100,30 +101,54 @@ ui <- fluidPage(theme = bs_theme(version = 5, bootswatch = "flatly", primary = "
                                                           actionButton("info_alpha_plot_lmm", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
                                                               plotOutput("alpha_plot_lmm", height = 400))),
-                                                 tabPanel("ANOVA (LMM)", 
+                                                 tabPanel("ANOVA (continuous)", 
                                                           div(class = "tab-content-spacing",
-                                                          h4("ANOVA (LMM)", 
-                                                          actionButton("info_anova_table", label = NULL, icon = icon("question-circle"), 
-                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                              tableOutput("anova_table"))),
-                                                 tabPanel("Pairwise Comparisons (LMM)", 
+                                                          h4("ANOVA (continuous)", 
+                                                          actionButton("info_anova_table_num", label = NULL, icon = icon("question-circle"), 
+                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          tableOutput("anova_table_num"))),
+                                                 tabPanel("Model Summary (continuous)", 
                                                           div(class = "tab-content-spacing",
-                                                          h4("Pairwise Comparisons (LMM)", 
-                                                          actionButton("info_emmeans_table", label = NULL, icon = icon("question-circle"), 
+                                                          h4("Linear Mixed Model Summary (continuous)", 
+                                                          actionButton("info_lmm_num_model_summary", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                              DTOutput("emmeans_table"))),
-                                                 tabPanel("Model Summary (LMM)", 
+                                                          verbatimTextOutput("lmm_num_model_summary"))),
+                                                 tabPanel("Model Diagnostics Plots (continuous)",
                                                           div(class = "tab-content-spacing",
-                                                          h4("Linear Mixed Model Summary", 
-                                                          actionButton("info_lmm_model_summary", label = NULL, icon = icon("question-circle"), 
+                                                          h4("Model Diagnostics Plots (continuous)", 
+                                                          actionButton("info_lmm_num_diag_plot", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                              verbatimTextOutput("lmm_model_summary"))),
-                                                 tabPanel("Model Diagnostics Plots (LMM)",
+                                                          plotOutput("lmm_num_resid_plot", height = 400), plotOutput("lmm_num_qq_plot", height = 400), plotOutput("lmm_num_resp_plot", height = 400))),
+                                                 tabPanel("Multicollinearity (continuous)", 
                                                           div(class = "tab-content-spacing",
-                                                          h4("Model Diagnostics Plots (LMM)", 
-                                                          actionButton("info_lmm_resid_plot", label = NULL, icon = icon("question-circle"), 
+                                                          h4("Multicollinearity (continuous)", 
+                                                          actionButton("info_multi_table_num", label = NULL, icon = icon("question-circle"), 
                                                                        style = "font-size:12px;", class ="btn btn-info btn-sm")),
-                                                          plotOutput("lmm_resid_plot", height = 400), plotOutput("lmm_qq_plot", height = 400), plotOutput("lmm_resp_plot", height = 400))))),
+                                                          tableOutput("multi_table_num"))),
+                                                 tabPanel("ANOVA (categorical)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("ANOVA (categorical)", 
+                                                          actionButton("info_anova_table_cat", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                              tableOutput("anova_table_cat"))),
+                                                 tabPanel("Model Summary (categorical)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Linear Mixed Model Summary (categorical)", 
+                                                          actionButton("info_lmm_cat_model_summary", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                              verbatimTextOutput("lmm_cat_model_summary"))),
+                                                 tabPanel("Pairwise Comparisons (categorical)", 
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Pairwise Comparisons at Individual Timepoints (categorical)", 
+                                                          actionButton("info_emmeans_table_cat", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                              DTOutput("emmeans_table_cat"))),
+                                                 tabPanel("Model Diagnostics Plots (categorical)",
+                                                          div(class = "tab-content-spacing",
+                                                          h4("Model Diagnostics Plots (categorical)", 
+                                                          actionButton("info_lmm_cat_diag_plot", label = NULL, icon = icon("question-circle"), 
+                                                                       style = "font-size:12px;", class ="btn btn-info btn-sm")),
+                                                          plotOutput("lmm_cat_resid_plot", height = 400), plotOutput("lmm_cat_qq_plot", height = 400), plotOutput("lmm_cat_resp_plot", height = 400))))),
                     
                     ### Alpha diversity - GAMM tabs 
                     conditionalPanel(condition = "input.analysis_type == 'Alpha Diversity' && input.model_type == 'GAMM'",
@@ -293,13 +318,6 @@ server <- function(input, output, session) {
                             gavage_levels)
   
   
-  ### define global color map for gavage group plots
-  pair_levels <- unique(differential_abundance$gamm$smooth_diffs$pair)
-  
-  pair_colors <- setNames(RColorBrewer::brewer.pal(n = length(pair_levels), name = "Set1"),
-                          pair_levels)
-  
-  
   ######################################################
   ##########     ALPHA DIVERSITY ANALYSIS     ##########
   ######################################################
@@ -311,7 +329,7 @@ server <- function(input, output, session) {
       filter(gavage %in% input$gavage_plot)
   })
   
-  ### Linear mixed effects model
+  ### LINEAR MIXED EFFECTS MODEL
   
   # plot alpha diversity metric over time (LMM)
   output$alpha_plot_lmm <- renderPlot({
@@ -338,6 +356,8 @@ server <- function(input, output, session) {
         hr(),
         p(strong("Linear Mixed Model (LMM):"), "Models both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). LMMs can only model linear 
           relationships between predictors and the response."),
+        p("Continuous tests whether there is a linear relationship between time and alpha diversity and whether the rate of change is different between gavage groups."),
+        p("Categorical tests whether the gavage groups are different, whether the days are different, and whether the effect of the gavage is dependent on day."),
         p(strong("Generalized Additive Mixed Model (GAMM):"), "Models both fixed effects (e.g., time and treatment) and random effects (e.g., subject id). 
           GAMMs allow non-linear relationships between predictors and the response via smooth functions (splines)."),
         easyClose = TRUE,
@@ -346,10 +366,10 @@ server <- function(input, output, session) {
     )
   })
   
-  
-  # LMM ANOVA table
-  output$anova_table <- renderTable({
-    df <- as.data.frame(alpha_diversity$models[[input$alpha_metric]]$lmm$anova) 
+
+  # ANOVA table (continuous LMM)
+  output$anova_table_num <- renderTable({
+    df <- as.data.frame(alpha_diversity$models[[input$alpha_metric]]$lmm_num$anova) 
     
     # format table
     df_formatted <- df %>% 
@@ -364,13 +384,12 @@ server <- function(input, output, session) {
     df_formatted
   })
   
-  # info pop-up for the ANOVA table
-  observeEvent(input$info_anova_table, {
+  # info pop-up for the ANOVA table (continuous LMM)
+  observeEvent(input$info_anova_table_num, {
     showModal(
       modalDialog(
-        title = "How to Read the ANOVA Table",
-        p("The ANOVA tests whether each term in the model explain variation in the response after accounting 
-          for all other terms in the model (i.e., if a term is removed from the full model, does the model ger significanlty worse?)."),
+        title = "How to Read the ANOVA Table When Time is Continuous",
+        p("The ANOVA tests whether each term in the model explains variation in the response after accounting for all other terms in the model."),
         hr(),
         p(strong("Sum Sq (Sum of squares):"), "Total variance explained by that term, after accounting for all other fixed effects."),
         p(strong("Mean Sq (Sum Sq divided by NumDF):"), "Variance explained per degree of freedom."),
@@ -379,6 +398,9 @@ server <- function(input, output, session) {
           accounting for random effects and unbalanced data using Satterhwaite's approximation."),
         p(strong("F:"), "Parametric F-statistic (ratio of signal to noise)."),
         p(strong("Pr(>F):"), "P-value."),
+        p(strong("gavage:"), "Main effect of gavage averaged over time."),
+        p(strong("day_c:"), "Main effect of day (i.e., does the rate of change over time (slope) differ from zero for reference gavage group)."),
+        p(strong("gavage:day_c:"), "The interaction between gavage and day_c (i.e., does the slope differ between gavage groups)."),
         easyClose = TRUE,
         footer = modalButton("Close")
       )
@@ -386,9 +408,196 @@ server <- function(input, output, session) {
   })
   
   
-  # LMM pairwise comparisons (estimated marginal means table)
-  output$emmeans_table <- renderDT({
-    df <- as.data.frame(alpha_diversity$models[[input$alpha_metric]]$lmm$emmeans)
+  # model summary (continuous LMM)
+  output$lmm_num_model_summary <- renderPrint({
+    summary(alpha_diversity$models[[input$alpha_metric]]$lmm_num$model)
+  })
+  
+  # info pop-up for the model summary (continuous LMM)
+  observeEvent(input$info_lmm_num_model_summary, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the LMM Summary When Time is Continuous",
+        p(strong("Scaled residuals:"), "Shows the distribution of the residuals. Ideally, residuals should be centered around zero, with a roughly symmetric spread. 
+          See Model Diagnostics Plots (continuous)."),
+        p(strong("Random effects:"), "Variance associated with grouping variables that accounts for the correlation among repeated observations within the same group."),
+        p(strong("Fixed effects:"), "Estimated effects of gavage, day and their interaction relative to the reference levels."),
+        p(strong("(Intercept):"), "Value for the reference group on the reference day. Day is centered, so the reference day corresponds to the mean day in the dataset."),
+        p(strong("gavage(group):"), "The difference between gavage(group) and the reference group on the reference day."),
+        p(strong("day_c:"), "The change per day for the reference group."),
+        p(strong("gavage(group):day_c:"), "Represents the difference in slope for gavage(group) compared to the reference group."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # residuals versus fitted plot (continuous LMM)
+  output$lmm_num_resid_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_num$model
+    plot(fitted(model), resid(model),
+         xlab = "Fitted values", ylab = "Residuals",
+         main = "LMM Residuals vs Fitted")
+    abline(h = 0, lty = 2)
+  })
+  
+  # Q-Q plot (continuous LMM)
+  output$lmm_num_qq_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_num$model
+    qqnorm(resid(model), main = "LMM Normal Q-Q")
+    qqline(resid(model))
+  })
+  
+  # response versus fitted plot (continuous LMM)
+  output$lmm_num_resp_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_num$model
+    plot(fitted(model), alpha_diversity$metrics[[input$alpha_metric]],
+         ylab = "Response", xlab = "Fitted Values",
+         main = "LMM Response vs Fitted Values")
+    abline(a = 0, b = 1, lty = 2)
+  })
+  
+  # info pop-up for the diagnostics plots (continuous LMM)
+  observeEvent(input$info_lmm_num_diag_plot, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the Diagnostics Plots",
+        p(strong("Residual versus fitted plot:"), "allows you to assess whether the model has captured the relationship between the predictors and whether the outcome 
+          and whether the residuals are homoscedastic."),
+        p("The residuals should be evenly distributed around zero (the horizontal line) across the range of fitted values."),
+        p(strong("Systemic patterns or curvature:"), "suggest that the model has not captured a key aspect of the data (e.g., the model may be missing an important variable 
+          or interaction term or the relationship between a predictor and the outcome may be nonlinear)."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
+        hr(),
+        p(strong("QQ plot (quantile-quantile plot):"), "compares the empirical distribution of the residuals against a specified (often normal) distribution, allowing you 
+          to assess whether the residuals follow the assumed distribution. Normality of the residuals is essential for hypothesis testing (p-values) and for the validity 
+          of the confidence intervals."),
+        p("The residuals should lie along a straight 45-degree diagonal line if they approximately follow the specified distribution."),
+        p(strong("Curvature (concave or convex):"), "typically indicates skewness. A convex curve (tails below the line), indicates a left (negative) skew. A concave curve 
+          (tails above the line), indicates a right (positive) skew."),
+        p(strong("S-shaped curve :"), "typically indicates kurtosis. If points are below the line on the left and above the line on the right it indicates heavy tails 
+          (leptokurtic). If points are above the line on the left and below the line on the right, it indicates light tails (platykurtic)."),
+        hr(),
+        p(strong("Response versus fitted plot:"),"shows how well the model predictions align with the actual data."),
+        p("If the model explains a lot of the variance (high predictive power), the points will cluster along a 45-degree diagonal line."),
+        p(strong("Systematic bias in predictions:"), "(e.g., points are consistently above or below the line) indicate that the model is consistently wrong in one direction 
+          (i.e., the model is underpredicting or overpredicting). This can happen if the model is missing an important variable or interaction term."),
+        p(strong("Curvature (concave or convex):"), "can indicate that the relationship between a predictor and the outcome is nonlinear."),
+        p(strong("Funnel shape:"), "suggests heteroscedasticity (non-constant variance of the residuals)."),
+        p(strong("Large scatter or wide spread around the line:"), "high residual variance; model may not explain much of the variation."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+
+  # multicollinearity table (continuous LMM)
+  output$multi_table_num <- renderTable({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_num$model
+    df <- as.data.frame(check_collinearity(model))
+    
+    # format table
+    df_formatted <- df %>%
+      select(-SE_factor) %>%
+      mutate(VIF = format(round(VIF, 2), nsmall = 2),
+             VIF_CI_low = format(round(VIF_CI_low, 2), nsmall = 2),
+             VIF_CI_high = ifelse(is.na(VIF_CI_high), "", format(round(VIF_CI_high, 2), nsmall = 2)),
+             Tolerance = format(round(Tolerance, 2), nsmall = 2),
+             Tolerance_CI_low = ifelse(is.na(Tolerance_CI_low), "", format(round(Tolerance_CI_low, 2), nsmall = 2)),
+             Tolerance_CI_high = format(round(Tolerance_CI_high, 2), nsmall = 2))
+    
+    df_formatted
+  })
+  
+  # info pop-up for the multicollinearity table (continuous LMM)
+  observeEvent(input$info_multi_table_num, {
+    showModal(
+      modalDialog(
+        title = "How to Read the Multicollinearity Table",
+        p("This table shows whether predictors in the model are highly correlated, which can affect the stability of coefficient estimates."),
+        p("When check_collinearity() computes VIF, it considers categorical factors as a single term with one degree of freedom, so the CI cannot be calculated. 
+          Internally a categorical factor with multiple levels is represented using dummy/indicator variables."),
+        p("When numeric day is uncentered it has a non-zero mean and is thus strongly correalted with the interaction term. Categorical models are not collinear by construction 
+          (i.e., main effects and interactions are represented by dummy variables that are already independent)."),
+        p(strong("VIF (Variance Inflation Factor:"), "Values > 5–10 suggest potential multicollinearity."),
+        p(strong("VIF_CI_low/VIF_CI_high:"), "Confidence interval for the VIF."),
+        p(strong("Tolerance:"), "The reciprocal of VIF (1/VIF). Low values (< 0.2) indicate potential multicollinearity."),
+        p(strong("Tolerance_CI_low/Tolerance_CI_high:"), "Confidence interval for Tolerance."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+
+  
+  # ANOVA table (categorical LMM)
+  output$anova_table_cat <- renderTable({
+    df <- as.data.frame(alpha_diversity$models[[input$alpha_metric]]$lmm_cat$anova) 
+    
+    # format table
+    df_formatted <- df %>% 
+      tibble::rownames_to_column("Model Term") %>%
+      mutate(`Sum Sq` = format(round(`Sum Sq`, 4), nsmall = 4),
+             `Mean Sq` = format(round(`Mean Sq`, 4), nsmall = 4),
+             NumDF = format(round(NumDF, 0), nsmall = 0),
+             DenDF = format(round(DenDF, 0), nsmall = 0),
+             `F value` = format(round(`F value`, 4), nsmall = 4),
+             `Pr(>F)` = format(round(`Pr(>F)`, 5), nsmall = 5))
+    
+    df_formatted
+  })
+  
+  # info pop-up for the ANOVA table (categorical LMM)
+  observeEvent(input$info_anova_table_cat, {
+    showModal(
+      modalDialog(
+        title = "How to Read the ANOVA Table When Time is Categorical",
+        p("The ANOVA tests whether each term in the model explains variation in the response after accounting for all other terms in the model."),
+        hr(),
+        p(strong("Sum Sq (Sum of squares):"), "Total variance explained by that term, after accounting for all other fixed effects."),
+        p(strong("Mean Sq (Sum Sq divided by NumDF):"), "Variance explained per degree of freedom."),
+        p(strong("NumDf (Numerator degrees of freedom):"), "How many parameters are being tested for that term."),
+        p(strong("DenDf (Denominator degrees of freedom):"), "Effective residual degrees of freedom available for testing fixed effects, 
+          accounting for random effects and unbalanced data using Satterhwaite's approximation."),
+        p(strong("F:"), "Parametric F-statistic (ratio of signal to noise)."),
+        p(strong("Pr(>F):"), "P-value."),
+        p(strong("gavage:"), "Main effect of gavage, averaged across all days."),
+        p(strong("day_factor:"), "Main effect of day, averaged across all groups."),
+        p(strong("gavage:day_factor:"), "The interaction between gavage and day_factor (i.e., does the effect of gavage differ across days)."),
+        easyClose = TRUE,
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # model summary (categorical LMM)
+  output$lmm_cat_model_summary <- renderPrint({
+    summary(alpha_diversity$models[[input$alpha_metric]]$lmm_cat$model)
+  })
+  
+  # info pop-up for the model summary (categorical LMM)
+  observeEvent(input$info_lmm_cat_model_summary, {
+    showModal(
+      modalDialog(
+        title = "How to Interpret the LMM Summary When Time is Categorical",
+        p(strong("Scaled residuals:"), "Shows the distribution of the residuals. Ideally, residuals should be centered around zero, with a roughly symmetric spread. 
+          See Model Diagnostics Plots (categorical)."),
+        p(strong("Random effects:"), "Variance associated with grouping variables that accounts for the correlation among repeated observations within the same group."),
+        p(strong("Fixed effects:"), "Estimated effects of gavage, day and their interaction relative to the reference levels."),
+        p(strong("(Intercept):"), "Value for the reference group on the reference day."),
+        p(strong("gavage(group):"), "The difference between gavage(group) and the reference group on the reference day."),
+        p(strong("day_factor(time):"), "The difference between day day_factor(time) and the reference day for the reference group."),
+        p(strong("gavage(group):day_factor(time):"), "Represents how the change from the reference day to day day_factor(time) in the gavage(group) group differs from the 
+          change in the reference group (i.e., the additional change over that period of time in the gavage(group) group relative to the change in the reference group)."),
+        footer = modalButton("Close")
+      )
+    )
+  })
+  
+  
+  # pairwise comparisons (categorical LMM)
+  output$emmeans_table_cat <- renderDT({
+    df <- as.data.frame(alpha_diversity$models[[input$alpha_metric]]$lmm_cat$emmeans)
     
     # format table
     df_formatted <- df %>%
@@ -401,66 +610,45 @@ server <- function(input, output, session) {
     df_formatted
   })
   
-  # info pop-up for the LMM pairwise comparisons (estimated marginal means table)
-  observeEvent(input$info_emmeans_table, {
+  # info pop-up for the pairwise comparisons (categorical LMM)
+  observeEvent(input$info_emmeans_table_cat, {
     showModal(
       modalDialog(
         title = "How to Read the Pairwise Comparisons Table",
         p("Pairwise comparisons of gavage groups at each timepoint using model-based estimated marginal means."),
         p(strong("day_factor:"), "The timepoint at which the comparison was made."),
-        p(strong("SE (Standard error):"), "Uncertainty in the estimate difference."),
         p(strong("estimate:"), "Estimated difference in the alpha diversity metric between the two groups based on the mixed model, not on raw means."),
         p(strong("SE (Standard error):"), "Uncertainty in the estimate difference."),
         p(strong("df (Degrees of freedom):"), "Effective degrees of freedom used in the t-test."),
-        p(strong("t.ratio:"), "How many standard errord the contrast is away from zero. The larger this value is, the stronger the evidence is. 
+        p(strong("t.ratio:"), "How many standard errors the contrast is away from zero. The larger this value is, the stronger the evidence is. 
           2 = borderline, >3 = strong and > 4 = very strong"),
-        p(strong("p.value:"), "Family-wise error controlled (by timepoint) p-values."),
+        p(strong("p.value:"), "Family-wise error controlled (by timepoint) p-values (using the Tukey method)."),
         footer = modalButton("Close")
       )
     )
   })
   
   
-  # LMM summary 
-  output$lmm_model_summary <- renderPrint({
-    summary(alpha_diversity$models[[input$alpha_metric]]$lmm$model)
-  })
-  
-  # info pop-up for the LMM summary
-  observeEvent(input$info_lmm_model_summary, {
-    showModal(
-      modalDialog(
-        title = "How to Interpret the LMM Summary",
-        p(strong("Scaled residuals:"), "Shows the distribution of the residuals Ideally, residuals should be centered areound zero, with a roughly symmetric spread."),
-        p(strong("Random effects:"), "Variance of random effects (effects due to grouping or clustering, that account for correlation within groups)."),
-        p(strong("Fixed effects:"), "Whether there is a significant difference between intercept, main effect of gavage, main effect of day and interactions (modification 
-          of gavage effect acros days) and baseline."),
-        footer = modalButton("Close")
-      )
-    )
-  })
-  
-  
-  # plot LMM residuals versus fitted
-  output$lmm_resid_plot <- renderPlot({
-    model <- alpha_diversity$models[[input$alpha_metric]]$lmm$model
+  # residuals versus fitted plot (categorical LMM)
+  output$lmm_cat_resid_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_cat$model
     plot(fitted(model), resid(model),
          xlab = "Fitted values", ylab = "Residuals",
          main = "LMM Residuals vs Fitted")
     abline(h = 0, lty = 2)
   })
   
-  # plot LMM normal Q-Q
-  output$lmm_qq_plot <- renderPlot({
-    model <- alpha_diversity$models[[input$alpha_metric]]$lmm$model
+  # Q-Q plot (categorical LMM)
+  output$lmm_cat_qq_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_cat$model
     qqnorm(resid(model), main = "LMM Normal Q-Q")
     qqline(resid(model))
   })
   
   
-  # plot LMM response plot
-  output$lmm_resp_plot <- renderPlot({
-    model <- alpha_diversity$models[[input$alpha_metric]]$lmm$model
+  # response versus fitted plot (categorical LMM)
+  output$lmm_cat_resp_plot <- renderPlot({
+    model <- alpha_diversity$models[[input$alpha_metric]]$lmm_cat$model
     plot(fitted(model), alpha_diversity$metrics[[input$alpha_metric]],
          ylab = "Response", xlab = "Fitted Values",
          main = "LMM Response vs Fitted Values")
@@ -468,8 +656,8 @@ server <- function(input, output, session) {
   })
   
   
-  # info pop-up for LMM residuals vs fitted and Q-Q plots
-  observeEvent(input$info_lmm_resid_plot, {
+  # info pop-up for the diagnostics plots (categorical LMM)
+  observeEvent(input$info_lmm_cat_diag_plot, {
     showModal(
       modalDialog(
         title = "How to Interpret the Diagnostics Plots",
