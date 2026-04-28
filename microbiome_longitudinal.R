@@ -29,6 +29,7 @@ library(LinDA)
 library(glmmTMB)
 library(DHARMa)
 library(gratia)
+library(splines)
 
 
 # setwd
@@ -311,11 +312,155 @@ emm_dn_Simp_f <- emmeans(lme_dn_Simp_f, ~ gavage | day_factor)
 pairs(emm_dn_Simp_f, adjust = "tukey")
 
 
+########################################################################
+#####   ALPHA DIVERSITY ANALYSIS - LINEAR MIXED MODELS + SPLINES   #####
+########################################################################
+
+### set gavage as factor
+alpha_phyloseq$gavage <- as.factor(alpha_phyloseq$gavage) 
+
+breakaway_richness_df$gavage <- as.factor(breakaway_richness_df$gavage)
+divnet_alpha_diversity_df$gavage <- as.factor(divnet_alpha_diversity_df$gavage)
+
+
+### Observed richness
+splines_Obs <- lmer(Observed ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_Obs)
+anova(splines_Obs)
+
+plot(resid(splines_Obs) ~ fitted(splines_Obs)) # check homoscedasticity
+qqnorm(resid(splines_Obs)); qqline(resid(splines_Obs)) # check normality
+plot(fitted(splines_Obs), alpha_phyloseq$Observed)
+plot(resid(splines_Obs) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### Shannon diversity
+splines_Shan <- lmer(Shannon ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_Shan)
+anova(splines_Shan)
+
+plot(resid(splines_Shan) ~ fitted(splines_Shan)) # check homoscedasticity
+qqnorm(resid(splines_Shan)); qqline(resid(splines_Shan)) # check normality
+plot(fitted(splines_Shan), alpha_phyloseq$Shannon)
+plot(resid(splines_Shan) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### Simpson diversity
+splines_Simp <- lmer(Simpson ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_Simp)
+anova(splines_Simp)
+
+plot(resid(splines_Simp) ~ fitted(splines_Simp)) # check homoscedasticity
+qqnorm(resid(splines_Simp)); qqline(resid(splines_Simp)) # check normality
+plot(fitted(splines_Simp), alpha_phyloseq$Simpson)
+plot(resid(splines_Simp) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### Chao1 diversity
+splines_Chao <- lmer(Chao1 ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_Chao)
+anova(splines_Chao)
+
+plot(resid(splines_Chao) ~ fitted(splines_Chao)) # check homoscedasticity
+qqnorm(resid(splines_Chao)); qqline(resid(splines_Chao)) # check normality
+plot(fitted(splines_Chao), alpha_phyloseq$Chao1)
+plot(resid(splines_Chao) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### richness (breakaway)
+splines_b_Obs <- lmer(estimate ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_b_Obs)
+anova(splines_b_Obs)
+
+plot(resid(splines_b_Obs) ~ fitted(splines_b_Obs)) # check homoscedasticity
+qqnorm(resid(splines_b_Obs)); qqline(resid(splines_b_Obs)) # check normality
+plot(fitted(splines_b_Obs), alpha_phyloseq$estimate)
+plot(resid(splines_b_Obs) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### Shannon diversity (DivNet)
+splines_dn_Shan <- lmer(shannon_estimate ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_dn_Shan)
+anova(splines_dn_Shan)
+
+plot(resid(splines_dn_Shan) ~ fitted(splines_dn_Shan)) # check homoscedasticity
+qqnorm(resid(splines_dn_Shan)); qqline(resid(splines_dn_Shan)) # check normality
+plot(fitted(splines_dn_Shan), alpha_phyloseq$shannon_estimate)
+plot(resid(splines_dn_Shan) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### Simpson diversity (DivNet)
+splines_dn_Simp <- lmer(simpson_estimate ~ ns(day_c, df = 2) * gavage + (1 | mouse_id), data = alpha_phyloseq)
+summary(splines_dn_Simp)
+anova(splines_dn_Simp)
+
+plot(resid(splines_dn_Simp) ~ fitted(splines_dn_Simp)) # check homoscedasticity
+qqnorm(resid(splines_dn_Simp)); qqline(resid(splines_dn_Simp)) # check normality
+plot(fitted(splines_dn_Simp), alpha_phyloseq$simpson_estimate)
+plot(resid(splines_dn_Simp) ~ alpha_phyloseq$day_c); abline(h = 0, col = "red")
+
+
+### plot smooths for Shannon
+# create data.frame of smooths for all gavage x centered day combinations
+smooth_df <- expand.grid(day_c = seq(min(alpha_phyloseq$day_c), max(alpha_phyloseq$day_c),
+                                   length = 200), gavage = levels(alpha_phyloseq$gavage))
+
+# get fitted values
+smooth_df$fit <- predict(splines_Shan, newdata = smooth_df, re.form = NA)
+
+# get SEs for each predicted value
+X <- model.matrix(~ ns(day_c, df = 2) * gavage, smooth_df)
+V <- vcov(splines_Shan)
+smooth_df$se <- sqrt(diag(X %*% V %*% t(X)))
+
+# add predictions to smooth_df
+smooth_df$upper <- smooth_df$fit + 2 * smooth_df$se
+smooth_df$lower <- smooth_df$fit - 2 * smooth_df$se
+
+ggplot() + theme_minimal() +
+  geom_point(data = alpha_phyloseq, aes(day_c, Shannon, color = gavage), alpha = 0.4) +
+  geom_line(data = smooth_df, aes(day_c, fit, color = gavage), linewidth = 1) +
+  geom_ribbon(data = smooth_df, aes(day_c, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+  labs(title = "LMM + splines fit for Shannon Diversity", y = "Shannon diversity", x = "Day")
+
+
+### function to plot smooths for alpha diversity metrics
+plot_alpha_lmm_splines <- function(data, lmm_splines_obj, alpha_div_metric, df_number) {
+  
+  # create data.frame of smooths for all gavage x centered day combinations
+  smooth_df <- expand.grid(day_c = seq(min(data$day_c), max(data$day_c),
+                                       length = 200), gavage = levels(data$gavage))
+  
+  # get fitted values
+  smooth_df$fit <- predict(lmm_splines_obj, newdata = smooth_df, re.form = NA)
+  
+  # get SEs for each predicted value
+  X <- model.matrix(~ ns(day_c, df = df_number) * gavage, smooth_df)
+  V <- vcov(lmm_splines_obj)
+  smooth_df$se <- sqrt(diag(X %*% V %*% t(X)))
+  
+  # add predictions to smooth_df
+  smooth_df$upper <- smooth_df$fit + 2 * smooth_df$se
+  smooth_df$lower <- smooth_df$fit - 2 * smooth_df$se
+  
+  ggplot() + theme_minimal() +
+    geom_point(data = data, aes(x = day_c, y = .data[[alpha_div_metric]], color = gavage), alpha = 0.4) +
+    geom_line(data = smooth_df, aes(day_c, fit, color = gavage), linewidth = 1) +
+    geom_ribbon(data = smooth_df, aes(day_c, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+    labs(title = paste0("LMM + splines fit for ", alpha_div_metric), y = alpha_div_metric, x = "Day")
+}
+
+plot_alpha_lmm_splines(data = alpha_phyloseq, lmm_splines_obj = splines_Obs, alpha_div_metric = "Observed", df = 2)
+plot_alpha_lmm_splines(data = alpha_phyloseq, lmm_splines_obj = splines_Shan, alpha_div_metric = "Shannon", df = 2)
+plot_alpha_lmm_splines(data = alpha_phyloseq, lmm_splines_obj = splines_Simp, alpha_div_metric = "Simpson", df = 2)
+plot_alpha_lmm_splines(data = alpha_phyloseq, lmm_splines_obj = splines_Chao, alpha_div_metric = "Chao1", df = 2)
+
+
 ############################################################################
 #####   ALPHA DIVERSITY ANALYSIS - GENERALIZED ADDITIVE MIXED MODELS   #####
 ############################################################################
 
-### compute statistics (generalized additive mixed models)
+### set gavage as factor
 alpha_phyloseq$gavage <- as.factor(alpha_phyloseq$gavage) 
 
 breakaway_richness_df$gavage <- as.factor(breakaway_richness_df$gavage)
@@ -432,7 +577,7 @@ smooth_df <- expand.grid(day = seq(min(alpha_phyloseq$day), max(alpha_phyloseq$d
 pred <- predict(gamm_Shan$gam, newdata = smooth_df, se.fit = TRUE, type = "response")
 
 # add predictions to smooth_df
-smooth_df$fit   <- pred$fit
+smooth_df$fit <- pred$fit
 smooth_df$upper <- pred$fit + 2 * pred$se.fit
 smooth_df$lower <- pred$fit - 2 * pred$se.fit
 
@@ -454,7 +599,7 @@ plot_alpha_gamm <- function(data, gamm_obj, alpha_div_metric) {
   pred <- predict(gamm_obj$gam, newdata = smooth_df, se.fit = TRUE, type = "response")
   
   # add predictions to smooth_df
-  smooth_df$fit   <- pred$fit
+  smooth_df$fit <- pred$fit
   smooth_df$upper <- pred$fit + 2 * pred$se.fit
   smooth_df$lower <- pred$fit - 2 * pred$se.fit
 
@@ -884,6 +1029,79 @@ ggplot(pca_ait_df, aes(x = PC1, y = PC2)) +
   ggtitle("PCA of CLR-transformed data (aitchison)") + theme_minimal()
 
 
+###################################################################################
+#####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - LINEAR MIXED MODELS + SPLINES   #####
+###################################################################################
+
+# filter low prevalence taxa (present in less than 10% of samples)
+feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
+
+# CLR transformation
+feat_filtered <- t(feat_filtered) # transpose
+feat_rel_abund <- feat_filtered/rowSums(feat_filtered) # convert feature table to relative abundances
+feat_clr <- clr(feat_rel_abund + 1e-6) # add pseudocount and perform CLR transformation
+feat_clr <- t(feat_clr)
+feat_clr <- as.data.frame(feat_clr)
+
+# ensure sample names are the same
+all(colnames(feat_clr) == rownames(meta))
+
+# add centered day to metadata
+meta$day_c <- meta$day - mean(meta$day) 
+
+# pivot feature table to long form
+feat_long <- feat_clr %>%
+  rownames_to_column(var = "taxon") %>%
+  pivot_longer(cols = -taxon,
+               names_to = "sample_id",
+               values_to = "abundance")
+
+# merge with metadata
+df_long <- feat_long %>%
+  left_join(meta, by = "sample_id")
+
+# convert gavage to factor
+df_long$gavage <- as.factor(df_long$gavage)
+
+
+### fit model with one feature
+taxon_name <- "Dorea_longicatena"
+df_taxon <- df_long %>% filter(taxon == taxon_name)
+
+lmm_splines <- lmer(abundance ~ ns(day_c, df = 3) * gavage + (1 | mouse_id), data = df_taxon)
+summary(lmm_splines)
+anova(lmm_splines)
+
+plot(resid(lmm_splines) ~ fitted(lmm_splines)) # check homoscedasticity
+qqnorm(resid(lmm_splines)); qqline(resid(lmm_splines)) # check normality
+plot(fitted(lmm_splines), df_taxon$abundance)
+plot(resid(lmm_splines) ~ df_taxon$day_c); abline(h = 0, col = "red")
+
+
+### plot predicted values
+# create data.frame of smooths for all gavage x centered day combinations
+smooth_df <- expand.grid(day_c = seq(min(df_taxon$day_c), max(df_taxon$day_c),
+                                     length = 200), gavage = levels(df_taxon$gavage))
+
+# get fitted values
+smooth_df$fit <- predict(lmm_splines, newdata = smooth_df, re.form = NA)
+
+# get SEs for each predicted value
+X <- model.matrix(~ ns(day_c, df = 3) * gavage, smooth_df)
+V <- vcov(lmm_splines)
+smooth_df$se <- sqrt(diag(X %*% V %*% t(X)))
+
+# add predictions to smooth_df
+smooth_df$upper <- smooth_df$fit + 2 * smooth_df$se
+smooth_df$lower <- smooth_df$fit - 2 * smooth_df$se
+
+ggplot() + theme_minimal() +
+  geom_point(data = df_taxon, aes(day_c, abundance, color = gavage), alpha = 0.4) +
+  geom_line(data = smooth_df, aes(day_c, fit, color = gavage), linewidth = 1) +
+  geom_ribbon(data = smooth_df, aes(day_c, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+  labs(title = paste0("GAMM Smooths for ", taxon_name), y = "CLR abundance", x = "Day") # + facet_wrap(~gavage) # include for faceted plots
+
+
 ########################################################################################################################
 #####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - MICROBIOME MULTIVARIABLE ASSOCIATION WITH LINEAR MODELS (MAASLIN2)   #####
 ########################################################################################################################
@@ -1049,7 +1267,7 @@ smooth_df <- expand.grid(day = seq(min(df_taxon$day), max(df_taxon$day), length 
 pred <- predict(gamm_model$gam, newdata = smooth_df, se.fit = TRUE, type = "response")
 
 # add predictions to smooth_df
-smooth_df$fit   = pred$fit
+smooth_df$fit = pred$fit
 smooth_df$upper = pred$fit + 2 * pred$se.fit
 smooth_df$lower = pred$fit - 2 * pred$se.fit
 
