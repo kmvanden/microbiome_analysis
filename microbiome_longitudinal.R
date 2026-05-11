@@ -30,6 +30,7 @@ library(glmmTMB)
 library(DHARMa)
 library(gratia)
 library(splines)
+library(timeOmics)
 
 
 # setwd
@@ -1193,6 +1194,131 @@ corncob_coef_df <- corncob_coef_df %>%
   filter(term != "(Intercept)")
 
 
+#######################################################################################
+#####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - SPLINE-BASED - LINEAR MIXED MODEL   #####
+#######################################################################################
+
+# allows non-linear changes temporal changes 
+
+# filter low prevalence taxa (present in less than 10% of samples)
+feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
+
+# CLR transformation
+feat_filtered <- t(feat_filtered) # transpose
+feat_rel_abund <- feat_filtered/rowSums(feat_filtered) # convert feature table to relative abundances
+feat_clr <- clr(feat_rel_abund + 1e-6) # add pseudocount and perform CLR transformation
+feat_clr <- t(feat_clr)
+feat_clr <- as.data.frame(feat_clr)
+
+# ensure sample names are the same
+all(colnames(feat_clr) == rownames(meta))
+
+# add centered day to metadata
+meta$day_c <- meta$day - mean(meta$day) 
+
+# pivot feature table to long form
+feat_long <- feat_clr %>%
+  rownames_to_column(var = "taxon") %>%
+  pivot_longer(cols = -taxon,
+               names_to = "sample_id",
+               values_to = "abundance")
+
+# merge with metadata
+df_long <- feat_long %>%
+  left_join(meta, by = "sample_id")
+
+# convert gavage to factor
+df_long$gavage <- as.factor(df_long$gavage)
+
+
+### fit model with one feature
+# taxon_name <- "Dorea_longicatena"
+taxon_name <- "Faecalibacterium_prausnitzii"
+
+df_taxon <- df_long %>% filter(taxon == taxon_name)
+lmm_splines <- lmer(abundance ~ ns(day_c, df = 3) * gavage + (1 | mouse_id), data = df_taxon)
+summary(lmm_splines)
+
+# check diagnostic plots
+plot(resid(lmm_splines) ~ fitted(lmm_splines))
+qqnorm(resid(lmm_splines)); qqline(resid(lmm_splines))
+plot(fitted(lmm_splines), df_taxon$abundance)
+plot(resid(lmm_splines) ~ df_taxon$day_c); abline(h = 0, col = "red")
+
+
+### plot smooths for one feature
+# create data.frame of smooths for all gavage x centered day combinations
+smooth_df <- expand.grid(day_c = seq(min(df_taxon$day_c), max(df_taxon$day_c), length.out = 200), 
+                         gavage = levels(df_taxon$gavage))
+
+# predict smooths
+pred <- predict(lmm_splines, newdata = smooth_df, re.form = NA, se.fit = TRUE)
+
+# add predictions to smooth_df
+smooth_df$fit = pred$fit
+smooth_df$upper = pred$fit + 2 * pred$se.fit
+smooth_df$lower = pred$fit - 2 * pred$se.fit
+
+ggplot() + theme_minimal() +
+  geom_point(data = df_taxon, aes(day_c, abundance, color = gavage), alpha = 0.4) +
+  geom_line(data = smooth_df, aes(day_c, fit, color = gavage), linewidth = 1) +
+  geom_ribbon(data = smooth_df, aes(x = day_c, ymin = lower, ymax = upper, fill = gavage), alpha = 0.2, color = NA) +
+  labs(title = paste0("Spline LMM for ", taxon_name), y = "CLR abundance", x = "Day") #+ facet_wrap(~gavage) # include for faceted plots
+
+
+### fit model to all features
+fit_lmm_splines_taxon <- function(df, taxon_name) {
+  df_taxon <- df %>% filter(taxon == taxon_name)
+  
+  # try-catch wrapper
+  out <- tryCatch({
+    
+    fit <- lmer(abundance ~ ns(day_c, df = 3) * gavage + (1 | mouse_id), data = df_taxon)
+    
+    sm <- summary(fit)
+    
+    ### extract fixed effect terms and rename columns
+    param_df <- as.data.frame(coef(sm)) %>%
+      mutate(term = rownames(coef(sm)),
+             taxon = taxon_name,
+             .before = 1) %>%
+      rename(estimate = Estimate, std_error = `Std. Error`,
+             t_value = `t value`, p_value = `Pr(>|t|)`)
+
+    list(param = param_df,
+         model_lmm = fit,
+         success = TRUE,
+         error = NA)
+    
+  }, error = function(e) {
+    
+    # return empty rows, but keep track of taxon and error
+    list(param = tibble(taxon = taxon_name, term = NA, estimate = NA, 
+                        std_error = NA, t_value = NA, p_value = NA),
+         model_lmm = NULL,
+         success = FALSE, error = as.character(e))
+  })
+  
+  return(out)
+}
+
+taxa_list <- unique(df_long$taxon) # list of all taxa
+lmm_results <- purrr::map(taxa_list, ~ fit_lmm_splines_taxon(df_long, .x)) 
+
+# combine parametric coefficients (gavage) into a data.frame
+param_results <- purrr::map_df(lmm_results, "param") 
+param_results$p_adj <- p.adjust(param_results$p_value, method = "BH")
+param_results <- param_results %>%
+  filter(p_adj < 0.05) %>%
+  arrange(p_value)
+rownames(param_results) <- NULL
+
+# extract success and failure flags
+fit_status <- tibble(taxon = names(lmm_results),
+                     success = purrr::map_lgl(lmm_results, "success"),
+                     error = purrr::map_chr(lmm_results, "error"))
+
+
 #####################################################################################################
 #####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - SPLINE-BASED - GENERALIZED ADDITIVE MIXED MODEL   #####
 #####################################################################################################
@@ -1329,7 +1455,7 @@ fit_gamm_taxon <- function(df, taxon_name) {
 }
 
 taxa_list <- unique(df_long$taxon) # list of all taxa
-gamm_results <- map(taxa_list, ~ fit_gamm_taxon(df_long, .x)) 
+gamm_results <- purrr::map(taxa_list, ~ fit_gamm_taxon(df_long, .x)) 
 
 # combine parametric coefficients (gavage) into a data.frame
 param_results <- purrr::map_df(gamm_results, "param") 
@@ -1546,6 +1672,16 @@ glmmTMB_zinb_results <- glmmTMB_zinb_results %>%
 fit_status_zinb <- tibble(taxon = zero_inflated_taxa,
                           success = purrr::map_lgl(glmmTMB_zinb_results_list, "success"),
                           error = purrr::map_chr(glmmTMB_zinb_results_list, "error"))
+
+
+######################################################################
+#####   LONGITUDINAL MODELS - COMPARISON OF FIT AND COMPLEXITY   #####
+######################################################################
+
+
+###############################################################
+#####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - TIMEOMICS   #####
+###############################################################
 
 
 ############################################################################################
