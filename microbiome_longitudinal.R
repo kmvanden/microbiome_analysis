@@ -30,7 +30,6 @@ library(glmmTMB)
 library(DHARMa)
 library(gratia)
 library(splines)
-library(timeOmics)
 
 
 # setwd
@@ -1674,14 +1673,192 @@ fit_status_zinb <- tibble(taxon = zero_inflated_taxa,
                           error = purrr::map_chr(glmmTMB_zinb_results_list, "error"))
 
 
-######################################################################
-#####   LONGITUDINAL MODELS - COMPARISON OF FIT AND COMPLEXITY   #####
-######################################################################
-
-
 ###############################################################
 #####   LONGITUDINAL DIFFERENTIAL ABUNDANCE - TIMEOMICS   #####
 ###############################################################
+
+# library(lmms)
+library(timeOmics)
+
+# filter low prevalence taxa (present in less than 10% of samples)
+feat_filtered <- feat[rowSums(feat > 0) >= ceiling(0.10 * ncol(feat)), ] 
+
+# CLR transformation
+feat_filtered <- t(feat_filtered) # transpose
+feat_rel_abund <- feat_filtered/rowSums(feat_filtered) # convert feature table to relative abundances
+feat_clr <- clr(feat_rel_abund + 1e-6) # add pseudocount and perform CLR transformation
+feat_clr_df <- as.data.frame(feat_clr)
+
+# ensure sample names are the same
+all(rownames(feat_clr_df) == rownames(meta))
+
+# merge with metadata to get gavage group
+feat_clr_df$sample_id <- rownames(feat_clr_df)
+timeomics_df <- feat_clr_df %>%
+  dplyr::left_join(meta %>% dplyr::select(sample_id, mouse_id, gavage), by = "sample_id")
+timeomics_df$sample_id <- NULL
+
+# split into separate dataframes based on gavage group
+split_df <- split(timeomics_df, timeomics_df$gavage)
+
+
+### fit a smooth longitudinal trajectory to each feature independently
+# sampleID is subject id, not sample id
+time <- rep(c(7, 14, 21, 28), each = 4) # numeric vector with sample time point information
+
+
+### G_1DMD
+G_1DMD_df <- split_df[[1]]
+mouseID_1DMD <- G_1DMD_df$mouse_id # create sampleID vector
+G_1DMD_df$gavage <- NULL
+G_1DMD_df$mouse_id <- NULL
+
+lmms.output_1DMD <- lmms::lmmSpline(data = G_1DMD_df, time = time,
+                                    sampleID = mouseID_1DMD, deri = FALSE,
+                                    basis = "p-spline", timePredict = seq(7, 28, by = 1), # for daily interpolated trajectories
+                                    keepModels = TRUE)
+modelled.data_1DMD <- t(slot(lmms.output_1DMD, 'predSpline')) # interpolated smoothed trajectories
+
+filter.res_1DMD <- lmms.filter.lines(data = G_1DMD_df, lmms.obj = lmms.output_1DMD, time = time)
+filtered_1DMD <- filter.res_1DMD$filtered # remove profiles where inter-individual variation is too high
+
+### plot the modelled profiles for G_1DMD
+smooth_traj <- modelled.data_1DMD[, 1:25] %>% as.data.frame() %>% 
+  rownames_to_column("time") %>%
+  mutate(time = as.numeric(time)) %>%
+  pivot_longer(names_to = "feature", values_to = 'value', -time)
+
+ggplot(smooth_traj, aes(x = time, y = value, color = feature)) + geom_line() +
+  theme_bw() + ggtitle("`lmms` profiles") + ylab("Feature expression") +
+  xlab("Time")
+
+### single-omic longitudinal clustering for G_1DMD
+pca_1DMD <- pca(X = filtered_1DMD, ncomp = 5, scale = FALSE, center = FALSE) # pca
+
+pca.ncomp_1DMD <- getNcomp(pca_1DMD, max.ncomp = 5, X = filtered_1DMD, scale = FALSE, center=FALSE) # tune ncomp
+pca.ncomp_1DMD$choice.ncomp
+
+pca_1DMD <- pca(X = filtered_1DMD, ncomp = 2, scale = FALSE, center = FALSE) # final full model
+
+tune.spca.res_1DMD <- tuneCluster.spca(X = filtered_1DMD, ncomp = 2, test.keepX = c(2:20)) # tune keepX
+tune.spca.res_1DMD$choice.keepX # features to keep by component
+
+spca.res_1DMD <- spca(X = filtered_1DMD, ncomp = 2, keepX = tune.spca.res_1DMD$choice.keepX, scale = FALSE) # final sparse model
+
+plotLong(spca.res_1DMD) # plot longitudinal clusters
+plotLoadings(spca.res_1DMD, comp = 1) # loadings 
+plotVar(spca.res_1DMD) # correlation circle plot
+
+spca.cluster_1DMD <- getCluster(spca.res_1DMD) # extract clusters
+spca.cluster_1DMD
+
+
+### G_4DMD
+G_4DMD_df <- split_df[[2]]
+mouseID_4DMD <- G_4DMD_df$mouse_id
+G_4DMD_df$gavage <- NULL
+G_4DMD_df$mouse_id <- NULL
+
+lmms.output_4DMD <- lmms::lmmSpline(data = G_4DMD_df, time = time,
+                                    sampleID = mouseID_4DMD, deri = FALSE,
+                                    basis = "p-spline", timePredict = seq(7, 28, by = 1), # for daily interpolated trajectories
+                                    keepModels = TRUE)
+modelled.data_4DMD <- t(slot(lmms.output_4DMD, 'predSpline')) # interpolated smoothed trajectories
+
+filter.res_4DMD <- lmms.filter.lines(data = G_4DMD_df, lmms.obj = lmms.output_4DMD, time = time)
+filtered_4DMD <- filter.res_4DMD$filtered # remove profiles where inter-individual variation is too high
+
+### single-omic longitudinal clustering for G_4DMD
+pca_4DMD <- pca(X = filtered_4DMD, ncomp = 5, scale = FALSE, center = FALSE) # pca
+
+pca.ncomp_4DMD <- getNcomp(pca_4DMD, max.ncomp = 5, X = filtered_4DMD, scale = FALSE, center=FALSE) # tune ncomp
+pca.ncomp_4DMD$choice.ncomp
+
+pca_4DMD <- pca(X = filtered_4DMD, ncomp = 2, scale = FALSE, center = FALSE) # final full model
+
+tune.spca.res_4DMD <- tuneCluster.spca(X = filtered_4DMD, ncomp = 2, test.keepX = c(2:20)) # tune keepX
+tune.spca.res_4DMD$choice.keepX # features to keep by component
+
+spca.res_4DMD <- spca(X = filtered_4DMD, ncomp = 2, keepX = tune.spca.res_4DMD$choice.keepX, scale = FALSE) # final sparse model
+
+plotLong(spca.res_4DMD) # plot longitudinal clusters
+plotLoadings(spca.res_4DMD, comp = 2) # loadings 
+plotVar(spca.res_4DMD) # correlation circle plot
+
+spca.cluster_4DMD <- getCluster(spca.res_4DMD) # extract clusters
+spca.cluster_4DMD
+
+
+### G_4W7C
+G_4W7C_df <- split_df[[3]]
+mouseID_4W7C <- G_4W7C_df$mouse_id
+G_4W7C_df$gavage <- NULL
+G_4W7C_df$mouse_id <- NULL
+
+lmms.output_4W7C <- lmms::lmmSpline(data = G_4W7C_df, time = time,
+                                    sampleID = mouseID_4W7C, deri = FALSE,
+                                    basis = "p-spline", timePredict = seq(7, 28, by = 1), # for daily interpolated trajectories
+                                    keepModels = TRUE)
+modelled.data_4W7C <- t(slot(lmms.output_4W7C, 'predSpline')) # interpolated smoothed trajectories
+
+filter.res_4W7C <- lmms.filter.lines(data = G_4W7C_df, lmms.obj = lmms.output_4W7C, time = time)
+filtered_4W7C <- filter.res_4W7C$filtered # remove profiles where inter-individual variation is too high
+
+### single-omic longitudinal clustering for G_4W7C
+pca_4W7C <- pca(X = filtered_4W7C, ncomp = 5, scale = FALSE, center = FALSE) # pca
+
+pca.ncomp_4W7C <- getNcomp(pca_4W7C, max.ncomp = 5, X = filtered_4W7C, scale = FALSE, center=FALSE) # tune ncomp
+pca.ncomp_4W7C$choice.ncomp
+
+pca_4W7C <- pca(X = filtered_4W7C, ncomp = 2, scale = FALSE, center = FALSE) # final full model
+
+tune.spca.res_4W7C <- tuneCluster.spca(X = filtered_4W7C, ncomp = 2, test.keepX = c(2:20)) # tune keepX
+tune.spca.res_4W7C$choice.keepX # features to keep by component
+
+spca.res_4W7C <- spca(X = filtered_4W7C, ncomp = 2, keepX = tune.spca.res_4W7C$choice.keepX, scale = FALSE) # final sparse model
+
+plotLong(spca.res_4W7C) # plot longitudinal clusters
+plotLoadings(spca.res_4W7C, comp = 1) # loadings 
+plotVar(spca.res_4W7C) # correlation circle plot
+
+spca.cluster_4W7C <- getCluster(spca.res_4W7C) # extract clusters
+spca.cluster_4W7C
+
+
+### G_4WMD
+G_4WMD_df <- split_df[[4]]
+mouseID_4WMD <- G_4WMD_df$mouse_id
+G_4WMD_df$gavage <- NULL
+G_4WMD_df$mouse_id <- NULL
+
+lmms.output_4WMD <- lmms::lmmSpline(data = G_4WMD_df, time = time,
+                                    sampleID = mouseID_4WMD, deri = FALSE,
+                                    basis = "p-spline", timePredict = seq(7, 28, by = 1), # for daily interpolated trajectories
+                                    keepModels = TRUE)
+modelled.data_4WMD <- t(slot(lmms.output_4WMD, 'predSpline')) # interpolated smoothed trajectories
+
+filter.res_4WMD <- lmms.filter.lines(data = G_4WMD_df, lmms.obj = lmms.output_4WMD, time = time)
+filtered_4WMD <- filter.res_4WMD$filtered # remove profiles where inter-individual variation is too high
+
+### single-omic longitudinal clustering for G_4WMD
+pca_4WMD <- pca(X = filtered_4WMD, ncomp = 5, scale = FALSE, center = FALSE) # pca
+
+pca.ncomp_4WMD <- getNcomp(pca_4WMD, max.ncomp = 5, X = filtered_4WMD, scale = FALSE, center=FALSE) # tune ncomp
+pca.ncomp_4WMD$choice.ncomp
+
+pca_4WMD <- pca(X = filtered_4WMD, ncomp = 2, scale = FALSE, center = FALSE) # final full model
+
+tune.spca.res_4WMD <- tuneCluster.spca(X = filtered_4WMD, ncomp = 2, test.keepX = c(2:20)) # tune keepX
+tune.spca.res_4WMD$choice.keepX # features to keep by component
+
+spca.res_4WMD <- spca(X = filtered_4WMD, ncomp = 2, keepX = tune.spca.res_4WMD$choice.keepX, scale = FALSE) # final sparse model
+
+plotLong(spca.res_4WMD) # plot longitudinal clusters
+plotLoadings(spca.res_4WMD, comp = 1) # loadings 
+plotVar(spca.res_4WMD) # correlation circle plot
+
+spca.cluster_4WMD <- getCluster(spca.res_4WMD) # extract clusters
+spca.cluster_4WMD
 
 
 ############################################################################################
@@ -1862,6 +2039,11 @@ ggplot(df_stack, aes(x = day_factor, y = abundance, fill = .data[[top]])) +
   labs(title = "Stacked barplot of important taxa over time", 
        x = "Day", y = "Mean relative abundance") + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+
+#######################################################
+#####   LONGITUDINAL TAXA INTERACTIONS - LUPINE   #####
+#######################################################
 
 
 sessionInfo()
